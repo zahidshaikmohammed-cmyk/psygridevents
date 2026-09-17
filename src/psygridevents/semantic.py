@@ -58,6 +58,9 @@ class SemanticEvent:
     market_mechanism: str | None
     novelty_score: float = 0.0
     novelty_reason: str | None = None
+    materiality_status: str = "not_assessed"
+    materiality_score: float = 0.0
+    materiality_reason: str | None = None
 
 
 class SemanticExtractor:
@@ -77,26 +80,10 @@ class SemanticExtractor:
         text = self._document_text(representative)
         events: list[SemanticEvent] = []
         for event_type, trigger, score in self._candidate_types(text):
-            events.append(
-                self._build_event(
-                    intelligence,
-                    representative,
-                    event_type=event_type,
-                    trigger=trigger,
-                    trigger_score=score,
-                )
-            )
+            events.append(self._build_event(intelligence, representative, event_type=event_type, trigger=trigger, trigger_score=score))
         return events
 
-    def _build_event(
-        self,
-        intelligence: StoryIntelligence,
-        observation: RawObservation,
-        *,
-        event_type: str,
-        trigger: str,
-        trigger_score: float,
-    ) -> SemanticEvent:
+    def _build_event(self, intelligence: StoryIntelligence, observation: RawObservation, *, event_type: str, trigger: str, trigger_score: float) -> SemanticEvent:
         text = self._document_text(observation)
         trigger_position = text.lower().find(trigger.lower())
         sentence = self._sentence_around(text, trigger_position)
@@ -104,13 +91,11 @@ class SemanticExtractor:
         modality = self._modality(sentence)
         if negated and modality == "asserted":
             modality = "negated"
-
         matched_entities = tuple(sorted({match.instrument for match in intelligence.entities}))
         participants = tuple(sorted({match.alias for match in intelligence.entities}))
         magnitude = self._extract_magnitude(sentence)
         effects = self._extract_effects(sentence)
         horizon = self._extract_horizon(sentence)
-
         uncertainty: list[str] = []
         if not matched_entities:
             uncertainty.append("No configured instrument was explicitly resolved from this story.")
@@ -119,51 +104,15 @@ class SemanticExtractor:
         if modality != "asserted":
             uncertainty.append(f"Source language is marked as {modality}.")
         uncertainty.append("Event timestamp is source publication time unless an explicit event date is extracted later.")
-
         confidence = min(0.99, max(0.20, trigger_score))
         if not matched_entities:
             confidence -= 0.10
         if negated:
             confidence -= 0.25
-
         story_id = self._story_id(intelligence)
-        event_id = self._event_id(
-            story_id=story_id,
-            event_type=event_type,
-            instruments=matched_entities,
-        )
-        evidence = tuple(
-            EvidenceSpan(
-                observation_url=item.url,
-                publisher=item.publisher,
-                text=self._document_text(item)[:1000],
-                source_tier=item.source_tier,
-            )
-            for item in intelligence.story.observations
-        )
-        return SemanticEvent(
-            event_id=event_id,
-            story_id=story_id,
-            event_type=event_type,
-            trigger=trigger,
-            event_time=observation.published_at,
-            instruments=matched_entities,
-            participants=participants,
-            magnitude=magnitude,
-            direct_effect=effects.get("direct"),
-            indirect_effect=effects.get("indirect"),
-            competitor_effect=effects.get("competitor"),
-            supply_chain_effect=effects.get("supply_chain"),
-            time_horizon=horizon,
-            novelty_status="not_assessed",
-            surprise_status="not_assessed",
-            modality=modality,
-            negated=negated,
-            extraction_confidence=round(max(0.0, confidence), 3),
-            evidence=evidence,
-            uncertainty=tuple(uncertainty),
-            market_mechanism=None,
-        )
+        event_id = self._event_id(story_id=story_id, event_type=event_type, instruments=matched_entities)
+        evidence = tuple(EvidenceSpan(observation_url=item.url, publisher=item.publisher, text=self._document_text(item)[:1000], source_tier=item.source_tier) for item in intelligence.story.observations)
+        return SemanticEvent(event_id=event_id, story_id=story_id, event_type=event_type, trigger=trigger, event_time=observation.published_at, instruments=matched_entities, participants=participants, magnitude=magnitude, direct_effect=effects.get("direct"), indirect_effect=effects.get("indirect"), competitor_effect=effects.get("competitor"), supply_chain_effect=effects.get("supply_chain"), time_horizon=horizon, novelty_status="not_assessed", surprise_status="not_assessed", modality=modality, negated=negated, extraction_confidence=round(max(0.0, confidence), 3), evidence=evidence, uncertainty=tuple(uncertainty), market_mechanism=None)
 
     def _candidate_types(self, text: str) -> list[tuple[str, str, float]]:
         lower = text.lower()
@@ -197,13 +146,7 @@ class SemanticExtractor:
         number_match = re.search(r"[-+]?\d+(?:\.\d+)?", text.replace(",", ""))
         normalized_value = float(number_match.group(0)) if number_match else None
         unit = re.sub(r"[-+\d.,\s]", "", text)
-        return Magnitude(
-            text=text,
-            value=text,
-            unit=unit,
-            normalized_value=normalized_value,
-            normalized_unit=unit.lower() or None,
-        )
+        return Magnitude(text=text, value=text, unit=unit, normalized_value=normalized_value, normalized_unit=unit.lower() or None)
 
     def _modality(self, sentence: str) -> str:
         for modality, patterns in self.modality_patterns.items():
