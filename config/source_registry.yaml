@@ -1,0 +1,58 @@
+version: "1.0.0"
+
+# Source tiers are reliability classes, not truth guarantees.
+# Live URLs/API credentials will be added only after each adapter is tested.
+sources:
+  exchange_announcements:
+    enabled: false
+    category: corporate
+    tier: 1
+    notes: "Primary company/exchange disclosures where available."
+
+  regulatory_releases:
+    enabled: false
+    category: regulatory
+    tier: 1
+    notes: "Primary regulator/government publications."
+
+  company_ir:
+    enabled: false
+    category: corporate
+    tier: 1
+    notes: "Issuer investor-relations releases."
+
+  government_releases:
+    enabled: false
+    category: government_policy
+    tier: 1
+    notes: "Official government releases and notifications."
+
+  central_bank:
+    enabled: false
+    category: central_bank
+    tier: 1
+    notes: "Official central-bank communications."
+
+  reputable_wire:
+    enabled: false
+    category: news
+    tier: 2
+    notes: "Reputable professional news/wire source."
+
+  financial_media:
+    enabled: false
+    category: news
+    tier: 3
+    notes: "Secondary financial media."
+
+  general_media:
+    enabled: false
+    category: news
+    tier: 4
+    notes: "Useful for discovery; material facts require corroboration."
+
+  social_media:
+    enabled: false
+    category: discovery
+    tier: 5
+    notes: "Discovery-only unless independently verified."
