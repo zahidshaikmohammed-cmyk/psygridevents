@@ -77,6 +77,7 @@ class SemanticExtractor:
         data = yaml.safe_load(Path(rules_file).read_text(encoding="utf-8")) or {}
         self.rules: dict[str, Any] = data.get("event_rules", {})
         self.negation_patterns = tuple(data.get("negation_patterns", []))
+        self.negation_exclusions = tuple(data.get("negation_exclusions", []))
         self.modality_patterns = data.get("modality_patterns", {})
         self.horizon_patterns = data.get("horizon_patterns", {})
         self.effect_patterns = data.get("effect_patterns", {})
@@ -94,7 +95,7 @@ class SemanticExtractor:
         text = self._document_text(observation)
         trigger_position = text.lower().find(trigger.lower())
         sentence = self._sentence_around(text, trigger_position)
-        negated = any(re.search(pattern, sentence, re.I) for pattern in self.negation_patterns)
+        negated = self._is_negated(sentence)
         modality = self._modality(sentence)
         if negated and modality == "asserted":
             modality = "negated"
@@ -130,6 +131,19 @@ class SemanticExtractor:
                     candidates.append((event_type, trigger, float(rule.get("base_confidence", 0.60))))
         candidates.sort(key=lambda item: (-item[2], item[0], item[1]))
         return candidates[:3]
+
+    def _is_negated(self, sentence: str) -> bool:
+        normalized = canonical_text(sentence)
+        for pattern in self.negation_patterns:
+            for match in re.finditer(pattern, sentence, re.I):
+                prefix = sentence[max(0, match.start() - 24):match.start()]
+                suffix = sentence[match.end():match.end() + 24]
+                if any(re.search(exclusion, f"{prefix}{sentence[match.start():match.end()]}{suffix}", re.I) for exclusion in self.negation_exclusions):
+                    continue
+                if re.fullmatch(r"\s*no\.?\s*", match.group(0), re.I) and re.search(r"\b(?:order|certificate|case|appeal)\s*$", prefix, re.I):
+                    continue
+                return True
+        return False
 
     @staticmethod
     def _document_text(observation: RawObservation) -> str:
