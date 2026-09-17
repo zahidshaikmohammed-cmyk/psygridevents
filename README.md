@@ -23,7 +23,7 @@ Its job is not to collect headlines and attach a generic sentiment label. It is 
 
 **FACT → EVENT → EXPOSURE → MECHANISM → IMPACT → CONTEXT → CONFIRMATION → INTELLIGENCE**
 
-The engine is intentionally hybrid. Deterministic Python handles ingestion, normalization, validation, deduplication, clustering, entity resolution, semantic extraction, exposure mapping and data contracts. A future reasoning layer can enrich events with semantic interpretation without becoming the source of truth for infrastructure.
+The engine is intentionally hybrid. Deterministic Python handles ingestion, normalization, validation, deduplication, clustering, entity resolution, semantic extraction, exposure mapping, prioritization and data contracts. A future reasoning layer can enrich events with semantic interpretation without becoming the source of truth for infrastructure.
 
 ## Precision principles
 
@@ -71,7 +71,7 @@ Provider research and activation policy live in `docs/PROVIDER_RESEARCH.md`, `co
 
 The repository monitors the supplied 450-instrument universe. The canonical symbols live in `config/instruments.json` and are treated as configuration/data, not scattered constants.
 
-## Acquisition → semantic event pipeline
+## Acquisition → intelligence pipeline
 
 ```text
 Verified source feed
@@ -94,13 +94,15 @@ Semantic event extraction
       ↓
 Explicit exposure graph
       ↓
-[Next] novelty + surprise + materiality
+Novelty + materiality + contradiction context
       ↓
-[Next] contradiction / narrative state
+Synchronized market confirmation
       ↓
-[Next] synchronized market confirmation
+CP6 explainable prioritization
       ↓
-Ranked intelligence feed
+Deterministic ranking
+      ↓
+Machine-readable intelligence
 ```
 
 ### Semantic event contract
@@ -126,11 +128,15 @@ UNCERTAINTY
 MARKET MECHANISM
 ```
 
-The current implementation deliberately leaves `novelty_status`, `surprise_status` and `market_mechanism` as unassessed/null until their dedicated engines have historical baselines and synchronized market data. This prevents the semantic layer from smuggling an unsupported trading conclusion into the event record.
+The semantic layer does not invent surprise, direction or materiality. Dedicated engines attach those assessments when the required evidence exists.
 
 ### Exposure contract
 
 Direct exposure can be emitted when an event explicitly resolves to a configured instrument. Sector and second-order links require an explicit issuer/sector relationship graph. Generic intuition is not converted into a graph edge automatically.
+
+### CP6 prioritization contract
+
+Priority uses eight configured dimensions: source confidence, novelty, surprise, financial materiality, exposure, market relevance, persistence and transmission. Missing or explicitly unknown factors are excluded rather than fabricated, and model coverage is retained with every assessment. The score is an explainable prioritization measure, not a probability of price movement.
 
 ## Running
 
@@ -146,12 +152,10 @@ Run the currently enabled verified first-party feeds once:
 python -m psygridevents.main --once
 ```
 
-The one-shot CLI now reports raw observations, story count, semantic event candidates, resolved instruments, extraction confidence, magnitude, novelty and surprise state.
-
 No API keys are stored in the repository. Licensed providers remain disabled until credentials and entitlements are supplied.
 
 ## Status
 
-**Phase 2 — Semantic event foundation implemented.** Provider research, verified-feed configuration, raw acquisition, normalization, deduplication, story clustering, conservative 450-instrument entity resolution, evidence assessment, canonical semantic event extraction, explicit exposure mapping, regression tests and one-shot diagnostics are now in the repository.
+**CP6 — Explainable intelligence prioritization implemented.** The repository now has the semantic/event foundation, explicit transmission, novelty/materiality/contradiction context, synchronized market confirmation, and deterministic eight-factor prioritization with regression coverage.
 
-Next: **verified issuer/sector master → novelty/surprise/materiality engines → contradiction state → synchronized market confirmation.**
+Next: **CP7 — delivery/output contract and production-facing intelligence feed.**
