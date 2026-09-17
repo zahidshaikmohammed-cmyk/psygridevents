@@ -1,7 +1,5 @@
 version: "1.0.0"
 
-# Triggers are candidate generators, never standalone proof.
-# The extractor always retains the source sentence and provenance.
 event_rules:
   earnings:
     base_confidence: 0.86
@@ -50,58 +48,57 @@ event_rules:
     triggers: ["board meeting", "corporate announcement", "material disclosure"]
 
 negation_patterns:
-  - '\\bno\\b'
-  - '\\bnot\\b'
-  - '\\bdenied\\b'
-  - '\\bdenies\\b'
-  - '\\bdenied that\\b'
-  - '\\bno plans to\\b'
-  - '\\bhas not\\b'
+  - '\bno\b'
+  - '\bnot\b'
+  - '\bdenied\b'
+  - '\bdenies\b'
+  - '\bdenied that\b'
+  - '\bno plans to\b'
+  - '\bhas not\b'
 
 modality_patterns:
   hypothetical:
-    - '\\bmay\\b'
-    - '\\bmight\\b'
-    - '\\bcould\\b'
-    - '\\bpotentially\\b'
+    - '\bmay\b'
+    - '\bmight\b'
+    - '\bcould\b'
+    - '\bpotentially\b'
   planned:
-    - '\\bplans to\\b'
-    - '\\bwill\\b'
-    - '\\bexpected to\\b'
-    - '\\bset to\\b'
+    - '\bplans to\b'
+    - '\bwill\b'
+    - '\bexpected to\b'
+    - '\bset to\b'
   reported:
-    - '\\breportedly\\b'
-    - '\\bsources said\\b'
-    - '\\baccording to sources\\b'
+    - '\breportedly\b'
+    - '\bsources said\b'
+    - '\baccording to sources\b'
 
 horizon_patterns:
   immediate:
-    - '\\btoday\\b'
-    - '\\bimmediately\\b'
-    - '\\bwith immediate effect\\b'
+    - '\btoday\b'
+    - '\bimmediately\b'
+    - '\bwith immediate effect\b'
   near_term:
-    - '\\bthis quarter\\b'
-    - '\\bnext quarter\\b'
-    - '\\bcoming months\\b'
-    - '\\bnext few months\\b'
+    - '\bthis quarter\b'
+    - '\bnext quarter\b'
+    - '\bcoming months\b'
+    - '\bnext few months\b'
   medium_term:
-    - '\\bnext year\\b'
-    - '\\bby 20\\d{2}\\b'
-    - '\\bmedium term\\b'
+    - '\bnext year\b'
+    - '\bby 20\d{2}\b'
+    - '\bmedium term\b'
   long_term:
-    - '\\blong term\\b'
-    - '\\bover the next \\d+ years\\b'
+    - '\blong term\b'
+    - '\bover the next \d+ years\b'
 
 effect_patterns:
   direct:
-    - '(?:revenue|profit|ebitda|margin|capacity|production|sales)\\s+(?:rose|fell|increased|decreased|declined|grew|expanded|contracted)[^.]*'
-    - '(?:costs?|expenses?)\\s+(?:rose|fell|increased|decreased|declined|grew)[^.]*'
+    - '(?:revenue|profit|ebitda|margin|capacity|production|sales)\s+(?:rose|fell|increased|decreased|declined|grew|expanded|contracted)[^.]*'
+    - '(?:costs?|expenses?)\s+(?:rose|fell|increased|decreased|declined|grew)[^.]*'
   indirect:
-    - '(?:could|may|is expected to)\\s+(?:affect|impact|benefit|hurt)[^.]*'
+    - '(?:could|may|is expected to)\s+(?:affect|impact|benefit|hurt)[^.]*'
   competitor:
-    - '(?:competitors?|rivals?)\\s+(?:could|may|are expected to)[^.]*'
+    - '(?:competitors?|rivals?)\s+(?:could|may|are expected to)[^.]*'
   supply_chain:
-    - '(?:supplier|suppliers|customer|customers|supply chain|input costs?)\\s+[^.]*'
+    - '(?:supplier|suppliers|customer|customers|supply chain|input costs?)\s+[^.]*'
 
-# Captures common financial magnitudes without assigning economic meaning.
-magnitude_regex: '(?:₹|INR|Rs\\.?|USD|US\\$|\\$|EUR|€|AED)\\s?[0-9][0-9,]*(?:\\.[0-9]+)?\\s?(?:crore|lakh|million|billion|trillion|mn|bn|tn)?|[0-9][0-9,]*(?:\\.[0-9]+)?\\s?(?:%|percent|bps|basis points|MW|GW|tonnes|tons|barrels|million|billion|crore|lakh)'
+magnitude_regex: '(?:₹|INR|Rs\.?|USD|US\$|\$|EUR|€|AED)\s?[0-9][0-9,]*(?:\.[0-9]+)?\s?(?:crore|lakh|million|billion|trillion|mn|bn|tn)?|[0-9][0-9,]*(?:\.[0-9]+)?\s?(?:%|percent|bps|basis points|MW|GW|tonnes|tons|barrels|million|billion|crore|lakh)'
