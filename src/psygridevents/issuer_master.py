@@ -16,15 +16,19 @@ class IssuerRecord:
     isin: str | None
     security_code: str | None
     series: str | None
+    sector: str | None
+    industry: str | None
+    basic_industry: str | None
     source: str
     verified: bool
 
 
 class IssuerMasterBuilder:
-    """Build a verified identifier layer without altering the supplied universe.
+    """Build a verified identifier/sector layer without altering the supplied universe.
 
-    NSE's securities-master/reporting layer is the preferred identifier source.
-    Missing fields remain null rather than being guessed.
+    Official NSE/NSE Indices data is the preferred source. Missing fields remain
+    null rather than being guessed. A row is trusted only when it explicitly
+    carries the symbol and the caller marks the source record as verified.
     """
 
     def __init__(self, universe_file: str | Path) -> None:
@@ -38,7 +42,7 @@ class IssuerMasterBuilder:
         return tuple(payload.get("instruments", []))
 
     def merge(self, rows: Iterable[dict[str, str]]) -> list[IssuerRecord]:
-        by_symbol = {row.get("symbol", "").strip().upper(): row for row in rows}
+        by_symbol = {row.get("symbol", "").strip().upper(): row for row in rows if row.get("symbol")}
         records: list[IssuerRecord] = []
         for symbol in self.universe:
             row = by_symbol.get(symbol.upper(), {})
@@ -49,8 +53,11 @@ class IssuerMasterBuilder:
                     isin=row.get("isin") or row.get("ISIN") or None,
                     security_code=row.get("security_code") or row.get("security code") or None,
                     series=row.get("series") or None,
-                    source=row.get("source", "nse_securities_master"),
-                    verified=bool(row),
+                    sector=row.get("sector") or row.get("macro_sector") or None,
+                    industry=row.get("industry") or None,
+                    basic_industry=row.get("basic_industry") or row.get("basic industry") or None,
+                    source=row.get("source", "nse_official") if row else "nse_official",
+                    verified=bool(row.get("verified", True)) if row else False,
                 )
             )
         return records
