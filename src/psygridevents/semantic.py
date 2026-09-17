@@ -56,6 +56,8 @@ class SemanticEvent:
     evidence: tuple[EvidenceSpan, ...]
     uncertainty: tuple[str, ...]
     market_mechanism: str | None
+    novelty_score: float = 0.0
+    novelty_reason: str | None = None
 
 
 class SemanticExtractor:
