@@ -1,0 +1,17 @@
+# CP5 market confirmation rules.
+# These are deterministic gates, not calibrated probabilities.
+min_move_fraction: 0.002
+min_volume_ratio: 1.20
+min_reaction_minutes: 5
+max_reaction_minutes: 30
+confirm_threshold: 0.65
+contradict_threshold: 0.35
+
+positive_patterns:
+  - "\\b(increase|increased|increase[d]?|growth|grew|gain|gained|wins?|won|awarded|award|rise|rises|raised|approval|approved|benefit|beneficial|strong|positive|upside)\\b"
+negative_patterns:
+  - "\\b(decrease|decreased|decline|declined|fall|fell|loss|lost|cancelled|canceled|rejected|rejection|penalty|weak|negative|downside|cut|cuts|downgrade)\\b"
+
+# Confirmation uses the following synchronized dimensions when supplied:
+# price reaction, volume expansion, close vs VWAP, relative return vs benchmark,
+# and sector return. Missing dimensions remain unavailable rather than inferred.

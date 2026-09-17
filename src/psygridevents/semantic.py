@@ -65,6 +65,9 @@ class SemanticEvent:
     narrative_state: str = "unresolved"
     contradiction_score: float = 0.0
     contradiction_reason: str | None = None
+    market_confirmation_status: str = "untested"
+    market_confirmation_score: float = 0.0
+    market_confirmation_reason: str | None = None
 
 
 class SemanticExtractor:

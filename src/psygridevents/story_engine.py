@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterable
 
 from .acquisition import RSSAcquirer, RawObservation
 from .clustering import StoryCluster, cluster_stories
@@ -10,6 +11,7 @@ from .contradiction import ContradictionAssessment, ContradictionEngine
 from .deduplication import deduplicate
 from .entity_resolution import InstrumentResolver, EntityMatch
 from .evidence import EvidenceAssessment, assess_evidence
+from .market_confirmation import MarketConfirmationAssessment, MarketConfirmationEngine, MarketObservation
 from .materiality import MaterialityEngine
 from .normalize import normalized_observation
 from .novelty import NoveltyEngine
@@ -25,6 +27,7 @@ class StoryIntelligence:
     semantic_events: tuple[SemanticEvent, ...] = ()
     transmissions: tuple[TransmissionAssessment, ...] = ()
     contradictions: tuple[ContradictionAssessment, ...] = ()
+    market_confirmations: tuple[MarketConfirmationAssessment, ...] = ()
 
 
 class StoryEngine:
@@ -38,6 +41,7 @@ class StoryEngine:
         exposure_rules_file: str | Path | None = None,
         issuer_metadata_file: str | Path | None = None,
         contradiction_rules_file: str | Path | None = None,
+        market_confirmation_rules_file: str | Path | None = None,
     ) -> None:
         self.acquirer = RSSAcquirer()
         self.resolver = InstrumentResolver.from_instrument_file(instrument_file)
@@ -50,11 +54,14 @@ class StoryEngine:
             exposure_rules_file = config_dir / "exposure_rules.yaml"
         if contradiction_rules_file is None:
             contradiction_rules_file = config_dir / "contradiction_rules.yaml"
+        if market_confirmation_rules_file is None:
+            market_confirmation_rules_file = config_dir / "market_confirmation_rules.yaml"
         self.semantic_extractor = SemanticExtractor(semantic_rules_file)
         self.novelty_engine = NoveltyEngine()
         self.materiality_engine = MaterialityEngine(materiality_rules_file)
         self.transmission_engine = TransmissionEngine(exposure_rules_file, issuer_metadata_file)
         self.contradiction_engine = ContradictionEngine(contradiction_rules_file)
+        self.market_confirmation_engine = MarketConfirmationEngine(market_confirmation_rules_file)
 
     def acquire(self, feeds: list[dict], since: datetime | None = None) -> list[RawObservation]:
         observations: list[RawObservation] = []
@@ -115,11 +122,7 @@ class StoryEngine:
             )
         return assessed
 
-    def build_materiality(
-        self,
-        intelligence: list[StoryIntelligence],
-    ) -> list[StoryIntelligence]:
-        """Attach evidence-gated materiality to already extracted events."""
+    def build_materiality(self, intelligence: list[StoryIntelligence]) -> list[StoryIntelligence]:
         result: list[StoryIntelligence] = []
         for item in intelligence:
             events = []
@@ -136,11 +139,7 @@ class StoryEngine:
             result.append(replace(item, semantic_events=tuple(events)))
         return result
 
-    def build_transmission(
-        self,
-        intelligence: list[StoryIntelligence],
-    ) -> list[StoryIntelligence]:
-        """Attach explicit exposure/transmission paths without inventing links."""
+    def build_transmission(self, intelligence: list[StoryIntelligence]) -> list[StoryIntelligence]:
         result: list[StoryIntelligence] = []
         for item in intelligence:
             transmissions = self.transmission_engine.assess_many(item.semantic_events)
@@ -152,7 +151,6 @@ class StoryEngine:
         intelligence: list[StoryIntelligence],
         historical_events: tuple[SemanticEvent, ...],
     ) -> list[StoryIntelligence]:
-        """Attach contradiction and narrative state against historical events."""
         result: list[StoryIntelligence] = []
         for item in intelligence:
             assessments = self.contradiction_engine.assess_many(item.semantic_events, historical_events)
@@ -166,11 +164,33 @@ class StoryEngine:
                 )
                 for event, assessment in zip(item.semantic_events, assessments)
             ]
+            result.append(replace(item, semantic_events=tuple(events), contradictions=assessments))
+        return result
+
+    def build_market_confirmation(
+        self,
+        intelligence: list[StoryIntelligence],
+        market_observations: Iterable[MarketObservation],
+    ) -> list[StoryIntelligence]:
+        """Attach synchronized market reaction without inventing missing observations."""
+        observations = tuple(market_observations)
+        result: list[StoryIntelligence] = []
+        for item in intelligence:
+            assessments = self.market_confirmation_engine.assess_many(item.semantic_events, observations)
+            events = [
+                replace(
+                    event,
+                    market_confirmation_status=assessment.status,
+                    market_confirmation_score=assessment.score,
+                    market_confirmation_reason=assessment.reason,
+                )
+                for event, assessment in zip(item.semantic_events, assessments)
+            ]
             result.append(
                 replace(
                     item,
                     semantic_events=tuple(events),
-                    contradictions=assessments,
+                    market_confirmations=assessments,
                 )
             )
         return result
