@@ -1,58 +1,53 @@
-version: "1.0.0"
+version: "2.0.0"
 
-# Source tiers are reliability classes, not truth guarantees.
-# Live URLs/API credentials will be added only after each adapter is tested.
+# Evidence tiers are reliability/authority classes, not truth guarantees.
+# Detailed provider definitions live in config/providers.json.
+# No undocumented endpoint is guessed or activated.
+
+source_policy:
+  tier_0: first_party_truth
+  tier_1: premium_financial_wire
+  tier_2: event_news_analytics
+  tier_3: broad_discovery_context
+  tier_4: open_web_social_discovery
+
 sources:
-  exchange_announcements:
+  exchange_first_party:
+    enabled: true
+    tier: 0
+    providers: [nse_rss, bse_corporate_data]
+  regulator_first_party:
+    enabled: true
+    tier: 0
+    providers: [sebi_rss]
+  central_bank_first_party:
+    enabled: true
+    tier: 0
+    providers: [rbi_rss]
+  government_first_party:
+    enabled: true
+    tier: 0
+    providers: [pib_rss]
+  premium_financial_wire:
     enabled: false
-    category: corporate
     tier: 1
-    notes: "Primary company/exchange disclosures where available."
-
-  regulatory_releases:
+    providers: [lseg_reuters, bloomberg_event_feeds, factset_news]
+  event_news_analytics:
     enabled: false
-    category: regulatory
-    tier: 1
-    notes: "Primary regulator/government publications."
-
-  company_ir:
-    enabled: false
-    category: corporate
-    tier: 1
-    notes: "Issuer investor-relations releases."
-
-  government_releases:
-    enabled: false
-    category: government_policy
-    tier: 1
-    notes: "Official government releases and notifications."
-
-  central_bank:
-    enabled: false
-    category: central_bank
-    tier: 1
-    notes: "Official central-bank communications."
-
-  reputable_wire:
-    enabled: false
-    category: news
     tier: 2
-    notes: "Reputable professional news/wire source."
-
-  financial_media:
+    providers: [ravenpack, benzinga, perigon, newscatcher]
+  broad_discovery_context:
     enabled: false
-    category: news
     tier: 3
-    notes: "Secondary financial media."
-
-  general_media:
+    providers: [gdelt, polygon_news, marketaux, newsapi]
+  open_web_social_discovery:
     enabled: false
-    category: news
     tier: 4
-    notes: "Useful for discovery; material facts require corroboration."
+    providers: []
 
-  social_media:
-    enabled: false
-    category: discovery
-    tier: 5
-    notes: "Discovery-only unless independently verified."
+activation_rules:
+  - "Only use concrete feed URLs that have been verified from the provider's official documentation/catalogue."
+  - "Never infer or reverse-engineer a production endpoint from an undocumented website request."
+  - "Keep provider provenance on every observation."
+  - "Treat secondary discovery as evidence requiring corroboration when materiality is high."
+  - "Do not redistribute premium provider content outside the applicable license."
