@@ -67,33 +67,25 @@ class StoryEngine:
         if not historical_events:
             return intelligence
 
-        return [
-            replace(
-                item,
-                semantic_events=tuple(
+        assessed: list[StoryIntelligence] = []
+        for item in intelligence:
+            updated_events: list[SemanticEvent] = []
+            for event in item.semantic_events:
+                assessment = self.novelty_engine.assess(
+                    event,
+                    historical_events,
+                    as_of=as_of,
+                )
+                updated_events.append(
                     replace(
                         event,
-                        novelty_status=self.novelty_engine.assess(
-                            event,
-                            historical_events,
-                            as_of=as_of,
-                        ).status,
-                        novelty_score=self.novelty_engine.assess(
-                            event,
-                            historical_events,
-                            as_of=as_of,
-                        ).score,
-                        novelty_reason=self.novelty_engine.assess(
-                            event,
-                            historical_events,
-                            as_of=as_of,
-                        ).reason,
+                        novelty_status=assessment.status,
+                        novelty_score=assessment.score,
+                        novelty_reason=assessment.reason,
                     )
-                    for event in item.semantic_events
-                ),
-            )
-            for item in intelligence
-        ]
+                )
+            assessed.append(replace(item, semantic_events=tuple(updated_events)))
+        return assessed
 
     def _intelligence(self, story: StoryCluster) -> StoryIntelligence:
         text = " ".join(f"{item.title} {item.summary}" for item in story.observations)
