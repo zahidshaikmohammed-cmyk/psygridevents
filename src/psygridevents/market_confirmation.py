@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable
 
+import re
 import yaml
 
 from .semantic import SemanticEvent
@@ -45,12 +46,7 @@ class MarketConfirmationAssessment:
 
 
 class MarketConfirmationEngine:
-    """Compare an asserted event with synchronized post-event market behavior.
-
-    This layer is deliberately evidence-gated. It never fabricates prices,
-    volume, VWAP, benchmark, or sector observations and never turns missing
-    market data into confirmation.
-    """
+    """Compare an asserted event with synchronized post-event market behavior."""
 
     def __init__(self, rules_file: str | Path) -> None:
         data = yaml.safe_load(Path(rules_file).read_text(encoding="utf-8")) or {}
@@ -65,25 +61,30 @@ class MarketConfirmationEngine:
 
     @staticmethod
     def _polarity(event: SemanticEvent, positive_patterns: tuple[str, ...], negative_patterns: tuple[str, ...]) -> str:
-        import re
+        def classify(text: str) -> str:
+            positive = any(re.search(pattern, text, re.IGNORECASE) for pattern in positive_patterns)
+            negative = any(re.search(pattern, text, re.IGNORECASE) for pattern in negative_patterns)
+            if positive and not negative:
+                return "positive"
+            if negative and not positive:
+                return "negative"
+            return "neutral"
 
-        text = " ".join(
+        # Effects carry more directional meaning than generic trigger words.
+        effect_text = " ".join(
             value or ""
             for value in (
-                event.trigger,
                 event.direct_effect,
                 event.indirect_effect,
                 event.competitor_effect,
                 event.supply_chain_effect,
             )
         )
-        positive = any(re.search(pattern, text, re.IGNORECASE) for pattern in positive_patterns)
-        negative = any(re.search(pattern, text, re.IGNORECASE) for pattern in negative_patterns)
-        if positive and not negative:
-            return "positive"
-        if negative and not positive:
-            return "negative"
-        return "neutral"
+        effect_polarity = classify(effect_text)
+        if effect_polarity != "neutral":
+            return effect_polarity
+        trigger_text = " ".join((event.trigger or "",))
+        return classify(trigger_text)
 
     @staticmethod
     def _sign_matches(value: float, expected: str, threshold: float = 0.0) -> bool:
@@ -105,11 +106,7 @@ class MarketConfirmationEngine:
                 return "opposed"
         return "neutral"
 
-    def assess(
-        self,
-        event: SemanticEvent,
-        observations: Iterable[MarketObservation],
-    ) -> MarketConfirmationAssessment:
+    def assess(self, event: SemanticEvent, observations: Iterable[MarketObservation]) -> MarketConfirmationAssessment:
         expected = self._polarity(event, self.positive_patterns, self.negative_patterns)
         if event.negated or event.modality != "asserted":
             return self._untested(event, expected, "Non-asserted or negated event cannot be market-confirmed.")
@@ -118,10 +115,7 @@ class MarketConfirmationEngine:
         if expected == "neutral":
             return self._untested(event, expected, "No unambiguous documented event polarity is available for market testing.")
 
-        relevant = sorted(
-            (item for item in observations if item.symbol in event.instruments),
-            key=lambda item: item.timestamp,
-        )
+        relevant = sorted((item for item in observations if item.symbol in event.instruments), key=lambda item: item.timestamp)
         if not relevant:
             return self._untested(event, expected, "No synchronized market observations were supplied for the event instrument.")
 
@@ -131,11 +125,7 @@ class MarketConfirmationEngine:
         baseline_candidates = [item for item in relevant if item.timestamp <= event_time]
         reaction_candidates = [item for item in relevant if earliest <= item.timestamp <= latest]
         if not baseline_candidates or not reaction_candidates:
-            return self._untested(
-                event,
-                expected,
-                "Synchronized baseline and post-event reaction observations are required before confirmation.",
-            )
+            return self._untested(event, expected, "Synchronized baseline and post-event reaction observations are required before confirmation.")
 
         baseline = baseline_candidates[-1]
         terminal = reaction_candidates[-1]
@@ -143,9 +133,7 @@ class MarketConfirmationEngine:
             return self._untested(event, expected, "Baseline close is non-positive and cannot support a return calculation.")
 
         observed_return = (terminal.close / baseline.close) - 1.0
-        relative_return = None
-        if terminal.benchmark_return is not None:
-            relative_return = observed_return - terminal.benchmark_return
+        relative_return = None if terminal.benchmark_return is None else observed_return - terminal.benchmark_return
         volume_ratio = None
         if terminal.average_volume is not None and terminal.average_volume > 0:
             volume_ratio = terminal.volume / terminal.average_volume
@@ -157,7 +145,9 @@ class MarketConfirmationEngine:
         sector_alignment = self._alignment(terminal.sector_return, expected, self.min_move)
         relative_alignment = self._alignment(relative_return, expected, self.min_move)
         price_aligned = self._sign_matches(observed_return, expected, self.min_move)
-        price_opposed = self._sign_matches(observed_return, "negative" if expected == "positive" else "positive", self.min_move)
+        opposite = "negative" if expected == "positive" else "positive"
+        price_opposed = self._sign_matches(observed_return, opposite, self.min_move)
+
         corroborators = 0
         available_dimensions = 1
         if volume_ratio is not None:
@@ -173,8 +163,7 @@ class MarketConfirmationEngine:
             available_dimensions += 1
             corroborators += int(sector_alignment == "aligned")
 
-        price_component = 1.0 if price_aligned else 0.0 if price_opposed else 0.5
-        score = price_component / available_dimensions
+        score = (1.0 if price_aligned else 0.0 if price_opposed else 0.5) / available_dimensions
         if volume_ratio is not None:
             score += (1.0 if volume_ratio >= self.min_volume_ratio else 0.0) / available_dimensions
         if terminal.vwap is not None:
@@ -232,10 +221,6 @@ class MarketConfirmationEngine:
             reason=reason,
         )
 
-    def assess_many(
-        self,
-        events: list[SemanticEvent] | tuple[SemanticEvent, ...],
-        observations: Iterable[MarketObservation],
-    ) -> tuple[MarketConfirmationAssessment, ...]:
+    def assess_many(self, events: list[SemanticEvent] | tuple[SemanticEvent, ...], observations: Iterable[MarketObservation]) -> tuple[MarketConfirmationAssessment, ...]:
         materialized = tuple(observations)
         return tuple(self.assess(event, materialized) for event in events)

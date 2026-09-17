@@ -9,12 +9,12 @@ RULES = ROOT / "config" / "market_confirmation_rules.yaml"
 T0 = datetime(2026, 9, 17, 9, 30, tzinfo=timezone.utc)
 
 
-def event(event_id: str, *, effect: str = "revenue increase", modality: str = "asserted") -> SemanticEvent:
+def event(event_id: str, *, trigger: str = "order awarded", effect: str = "revenue increase", modality: str = "asserted") -> SemanticEvent:
     return SemanticEvent(
         event_id=event_id,
         story_id=f"story-{event_id}",
         event_type="order",
-        trigger="order awarded",
+        trigger=trigger,
         event_time=T0,
         instruments=("RELIANCE",),
         participants=("reliance",),
@@ -53,13 +53,7 @@ def obs(minutes: int, close: float, *, volume: float = 1000, vwap: float | None 
 
 def test_aligned_price_and_independent_dimensions_confirm() -> None:
     engine = MarketConfirmationEngine(RULES)
-    assessment = engine.assess(
-        event("positive"),
-        (
-            obs(-1, 100),
-            obs(5, 100.8, volume=1500, vwap=100.2, benchmark_return=0.001, sector_return=0.006),
-        ),
-    )
+    assessment = engine.assess(event("positive"), (obs(-1, 100), obs(5, 100.8, volume=1500, vwap=100.2, benchmark_return=0.001, sector_return=0.006)))
     assert assessment.status == "confirmed"
     assert assessment.observed_return > 0
     assert assessment.volume_ratio == 1.5
@@ -82,7 +76,7 @@ def test_missing_synchronized_baseline_is_untested() -> None:
 
 def test_neutral_event_is_not_forced_into_market_direction() -> None:
     engine = MarketConfirmationEngine(RULES)
-    assessment = engine.assess(event("neutral", effect="business activity continued"), (obs(-1, 100), obs(5, 101)))
+    assessment = engine.assess(event("neutral", trigger="business activity continued", effect="business activity continued"), (obs(-1, 100), obs(5, 101)))
     assert assessment.status == "untested"
     assert assessment.expected_direction == "neutral"
 
