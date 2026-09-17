@@ -3,12 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterable
 
 from .acquisition import RSSAcquirer, RawObservation
 from .clustering import StoryCluster, cluster_stories
 from .deduplication import deduplicate
 from .entity_resolution import InstrumentResolver, EntityMatch
 from .evidence import EvidenceAssessment, assess_evidence
+from .issuer_master import IssuerMasterBuilder, IssuerRecord
 from .normalize import normalized_observation
 from .novelty import NoveltyEngine
 from .semantic import SemanticEvent, SemanticExtractor
@@ -23,15 +25,23 @@ class StoryIntelligence:
 
 
 class StoryEngine:
-    """Acquisition-to-semantic-event pipeline with explicit provenance."""
+    """Acquisition-to-semantic-event pipeline with explicit issuer truth."""
 
     def __init__(
         self,
         instrument_file: str | Path,
         semantic_rules_file: str | Path | None = None,
+        issuer_rows: Iterable[dict[str, str]] | None = None,
     ) -> None:
         self.acquirer = RSSAcquirer()
-        self.resolver = InstrumentResolver.from_instrument_file(instrument_file)
+        base_resolver = InstrumentResolver.from_instrument_file(instrument_file)
+        self.issuer_records: tuple[IssuerRecord, ...] = ()
+        if issuer_rows is not None:
+            master = IssuerMasterBuilder(instrument_file)
+            self.issuer_records = tuple(master.merge(issuer_rows))
+            self.resolver = InstrumentResolver.from_issuer_records(self.issuer_records, base_resolver)
+        else:
+            self.resolver = base_resolver
         if semantic_rules_file is None:
             semantic_rules_file = Path(instrument_file).parent / "semantic_rules.yaml"
         self.semantic_extractor = SemanticExtractor(semantic_rules_file)
