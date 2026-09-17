@@ -15,6 +15,7 @@ from .market_confirmation import MarketConfirmationAssessment, MarketConfirmatio
 from .materiality import MaterialityEngine
 from .normalize import normalized_observation
 from .novelty import NoveltyEngine
+from .priority import PriorityAssessment, PriorityEngine
 from .semantic import SemanticEvent, SemanticExtractor
 from .transmission import TransmissionAssessment, TransmissionEngine
 
@@ -28,10 +29,11 @@ class StoryIntelligence:
     transmissions: tuple[TransmissionAssessment, ...] = ()
     contradictions: tuple[ContradictionAssessment, ...] = ()
     market_confirmations: tuple[MarketConfirmationAssessment, ...] = ()
+    priorities: tuple[PriorityAssessment, ...] = ()
 
 
 class StoryEngine:
-    """Acquisition-to-semantic-event pipeline with explicit provenance."""
+    """Acquisition-to-intelligence pipeline with explicit provenance."""
 
     def __init__(
         self,
@@ -42,6 +44,7 @@ class StoryEngine:
         issuer_metadata_file: str | Path | None = None,
         contradiction_rules_file: str | Path | None = None,
         market_confirmation_rules_file: str | Path | None = None,
+        priority_rules_file: str | Path | None = None,
     ) -> None:
         self.acquirer = RSSAcquirer()
         self.resolver = InstrumentResolver.from_instrument_file(instrument_file)
@@ -56,12 +59,15 @@ class StoryEngine:
             contradiction_rules_file = config_dir / "contradiction_rules.yaml"
         if market_confirmation_rules_file is None:
             market_confirmation_rules_file = config_dir / "market_confirmation_rules.yaml"
+        if priority_rules_file is None:
+            priority_rules_file = config_dir / "priority_rules.yaml"
         self.semantic_extractor = SemanticExtractor(semantic_rules_file)
         self.novelty_engine = NoveltyEngine()
         self.materiality_engine = MaterialityEngine(materiality_rules_file)
         self.transmission_engine = TransmissionEngine(exposure_rules_file, issuer_metadata_file)
         self.contradiction_engine = ContradictionEngine(contradiction_rules_file)
         self.market_confirmation_engine = MarketConfirmationEngine(market_confirmation_rules_file)
+        self.priority_engine = PriorityEngine(priority_rules_file)
 
     def acquire(self, feeds: list[dict], since: datetime | None = None) -> list[RawObservation]:
         observations: list[RawObservation] = []
@@ -194,6 +200,23 @@ class StoryEngine:
                 )
             )
         return result
+
+    def build_prioritization(self, intelligence: list[StoryIntelligence]) -> list[StoryIntelligence]:
+        """Attach explainable CP6 priority assessments without inventing factors."""
+        result: list[StoryIntelligence] = []
+        for item in intelligence:
+            priorities = self.priority_engine.assess_many(
+                item.semantic_events,
+                item.evidence,
+                item.transmissions,
+            )
+            result.append(replace(item, priorities=priorities))
+        return result
+
+    def rank_prioritization(self, intelligence: list[StoryIntelligence]) -> list[PriorityAssessment]:
+        """Return all event priorities in deterministic descending order."""
+        assessments = [priority for item in intelligence for priority in item.priorities]
+        return self.priority_engine.rank(assessments)
 
     def _intelligence(self, story: StoryCluster) -> StoryIntelligence:
         text = " ".join(f"{item.title} {item.summary}" for item in story.observations)
