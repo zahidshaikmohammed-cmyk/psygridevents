@@ -13,6 +13,7 @@ from .materiality import MaterialityEngine
 from .normalize import normalized_observation
 from .novelty import NoveltyEngine
 from .semantic import SemanticEvent, SemanticExtractor
+from .transmission import TransmissionAssessment, TransmissionEngine
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,7 @@ class StoryIntelligence:
     entities: tuple[EntityMatch, ...]
     evidence: EvidenceAssessment
     semantic_events: tuple[SemanticEvent, ...] = ()
+    transmissions: tuple[TransmissionAssessment, ...] = ()
 
 
 class StoryEngine:
@@ -31,6 +33,8 @@ class StoryEngine:
         instrument_file: str | Path,
         semantic_rules_file: str | Path | None = None,
         materiality_rules_file: str | Path | None = None,
+        exposure_rules_file: str | Path | None = None,
+        issuer_metadata_file: str | Path | None = None,
     ) -> None:
         self.acquirer = RSSAcquirer()
         self.resolver = InstrumentResolver.from_instrument_file(instrument_file)
@@ -38,9 +42,12 @@ class StoryEngine:
             semantic_rules_file = Path(instrument_file).parent / "semantic_rules.yaml"
         if materiality_rules_file is None:
             materiality_rules_file = Path(instrument_file).parent / "materiality_rules.yaml"
+        if exposure_rules_file is None:
+            exposure_rules_file = Path(instrument_file).parent / "exposure_rules.yaml"
         self.semantic_extractor = SemanticExtractor(semantic_rules_file)
         self.novelty_engine = NoveltyEngine()
         self.materiality_engine = MaterialityEngine(materiality_rules_file)
+        self.transmission_engine = TransmissionEngine(exposure_rules_file, issuer_metadata_file)
 
     def acquire(self, feeds: list[dict], since: datetime | None = None) -> list[RawObservation]:
         observations: list[RawObservation] = []
@@ -109,13 +116,31 @@ class StoryEngine:
             result.append(replace(item, semantic_events=tuple(events)))
         return result
 
+    def build_transmission(
+        self,
+        intelligence: list[StoryIntelligence],
+    ) -> list[StoryIntelligence]:
+        """Attach explicit exposure/transmission paths without inventing links."""
+        result: list[StoryIntelligence] = []
+        for item in intelligence:
+            transmissions = self.transmission_engine.assess_many(item.semantic_events)
+            result.append(replace(item, transmissions=transmissions))
+        return result
+
     def _intelligence(self, story: StoryCluster) -> StoryIntelligence:
         text = " ".join(f"{item.title} {item.summary}" for item in story.observations)
         matches = tuple(self.resolver.resolve(text))
         evidence = assess_evidence(list(story.observations))
         base = StoryIntelligence(story=story, entities=matches, evidence=evidence)
         events = tuple(self.semantic_extractor.extract(base))
-        return StoryIntelligence(story=story, entities=matches, evidence=evidence, semantic_events=events)
+        transmissions = self.transmission_engine.assess_many(events)
+        return StoryIntelligence(
+            story=story,
+            entities=matches,
+            evidence=evidence,
+            semantic_events=events,
+            transmissions=transmissions,
+        )
 
     @staticmethod
     def now() -> datetime:
