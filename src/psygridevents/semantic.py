@@ -77,7 +77,6 @@ class SemanticExtractor:
         data = yaml.safe_load(Path(rules_file).read_text(encoding="utf-8")) or {}
         self.rules: dict[str, Any] = data.get("event_rules", {})
         self.negation_patterns = tuple(data.get("negation_patterns", []))
-        self.negation_exclusions = tuple(data.get("negation_exclusions", []))
         self.modality_patterns = data.get("modality_patterns", {})
         self.horizon_patterns = data.get("horizon_patterns", {})
         self.effect_patterns = data.get("effect_patterns", {})
@@ -95,7 +94,7 @@ class SemanticExtractor:
         text = self._document_text(observation)
         trigger_position = text.lower().find(trigger.lower())
         sentence = self._sentence_around(text, trigger_position)
-        negated = self._is_negated(sentence)
+        negated = self._is_negated(sentence, trigger)
         modality = self._modality(sentence)
         if negated and modality == "asserted":
             modality = "negated"
@@ -132,17 +131,18 @@ class SemanticExtractor:
         candidates.sort(key=lambda item: (-item[2], item[0], item[1]))
         return candidates[:3]
 
-    def _is_negated(self, sentence: str) -> bool:
-        normalized = canonical_text(sentence)
-        for pattern in self.negation_patterns:
-            for match in re.finditer(pattern, sentence, re.I):
-                prefix = sentence[max(0, match.start() - 24):match.start()]
-                suffix = sentence[match.end():match.end() + 24]
-                if any(re.search(exclusion, f"{prefix}{sentence[match.start():match.end()]}{suffix}", re.I) for exclusion in self.negation_exclusions):
-                    continue
-                if re.fullmatch(r"\s*no\.?\s*", match.group(0), re.I) and re.search(r"\b(?:order|certificate|case|appeal)\s*$", prefix, re.I):
-                    continue
-                return True
+    def _is_negated(self, sentence: str, trigger: str) -> bool:
+        window_start = max(0, sentence.lower().find(trigger.lower()) - 120)
+        context = sentence[window_start:]
+        # Explicit verb negation and determiner constructions are safe signals.
+        if re.search(r"\b(?:did|does|do|is|are|was|were|has|have|had|will)\s+not\b", context, re.I):
+            return True
+        if re.search(r"\bden(?:y|ies|ied|ial)\b", context, re.I):
+            return True
+        if re.search(r"\bno\s+(?:acquisition|approval|plan|plans|intention|agreement|deal|evidence|impact|effect)\b", context, re.I):
+            return True
+        if re.search(r"\b(?:has|have|had)\s+no\s+(?:plan|plans|intention|approval|agreement|deal)\b", context, re.I):
+            return True
         return False
 
     @staticmethod
