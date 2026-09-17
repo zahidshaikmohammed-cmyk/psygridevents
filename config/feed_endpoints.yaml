@@ -1,0 +1,41 @@
+version: "1.0.0"
+
+# Only endpoints verified from the publisher's own public documentation are
+# placed here. Catalogue-only providers remain unresolved until their feed URL
+# is programmatically discoverable and tested.
+feeds:
+  - provider_id: sebi_rss
+    publisher: SEBI
+    tier: 0
+    category: regulatory
+    url: https://www.sebi.gov.in/sebirss.xml
+    enabled: true
+
+  - provider_id: pib_rss
+    publisher: Press Information Bureau
+    tier: 0
+    category: government_policy
+    url: https://pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=1
+    enabled: true
+
+# RBI publishes several RSS categories through its official catalogue. The
+# catalogue is authoritative, but the individual feed URLs are intentionally
+# not guessed here.
+  - provider_id: rbi_catalogue
+    publisher: Reserve Bank of India
+    tier: 0
+    category: central_bank
+    url: https://www.rbi.org.in/Scripts/rss.aspx
+    enabled: false
+    mode: catalogue
+
+# NSE publishes many corporate-information RSS categories. Its official page
+# is the source of truth for the feed links; do not hard-code an undocumented
+# feed URL when the catalogue link cannot be verified.
+  - provider_id: nse_catalogue
+    publisher: NSE India
+    tier: 0
+    category: corporate_disclosure
+    url: https://www.nseindia.com/static/rss-feed
+    enabled: false
+    mode: catalogue
