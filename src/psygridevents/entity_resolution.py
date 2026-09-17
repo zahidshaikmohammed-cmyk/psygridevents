@@ -4,7 +4,9 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable
 
+from .issuer_master import IssuerRecord
 from .normalize import canonical_text
 
 
@@ -18,27 +20,46 @@ class EntityMatch:
 
 
 class InstrumentResolver:
-    """Deterministic ticker/alias resolver for the configured universe.
+    """Deterministic resolver for configured tickers and verified issuer names.
 
-    This is intentionally conservative. It never infers a company from a vague
-    noun; only configured aliases are eligible. A future issuer-master adapter
-    can add verified company names without changing this contract.
+    Only aliases explicitly supplied by the canonical universe or verified issuer
+    master are eligible. No company/sector inference is performed from vague text.
     """
 
     def __init__(self, aliases: dict[str, list[str]]) -> None:
         self.aliases = {
-            symbol: sorted({canonical_text(symbol), *(canonical_text(a) for a in values)}, key=len, reverse=True)
+            symbol: sorted(
+                {canonical_text(symbol), *(canonical_text(a) for a in values)},
+                key=len,
+                reverse=True,
+            )
             for symbol, values in aliases.items()
         }
 
     @classmethod
-    def from_instrument_file(cls, path: str | Path, alias_file: str | Path | None = None) -> "InstrumentResolver":
+    def from_instrument_file(
+        cls, path: str | Path, alias_file: str | Path | None = None
+    ) -> "InstrumentResolver":
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         aliases = {symbol: [symbol] for symbol in data["instruments"]}
         if alias_file and Path(alias_file).exists():
             configured = json.loads(Path(alias_file).read_text(encoding="utf-8"))
             for symbol, values in configured.get("aliases", {}).items():
                 aliases.setdefault(symbol, []).extend(values)
+        return cls(aliases)
+
+    @classmethod
+    def from_issuer_records(
+        cls, records: Iterable[IssuerRecord], base: "InstrumentResolver"
+    ) -> "InstrumentResolver":
+        """Return a resolver extended only with verified issuer names."""
+        aliases = {symbol: list(values) for symbol, values in base.aliases.items()}
+        for record in records:
+            if not record.verified or not record.company_name:
+                continue
+            if record.symbol not in aliases:
+                continue
+            aliases[record.symbol].append(record.company_name)
         return cls(aliases)
 
     def resolve(self, text: str) -> list[EntityMatch]:
@@ -50,7 +71,8 @@ class InstrumentResolver:
                     continue
                 pattern = rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])"
                 for match in re.finditer(pattern, canonical):
-                    matches.append(EntityMatch(symbol, alias, match.start(), match.end(), 0.99 if alias == canonical_text(symbol) else 0.90))
+                    confidence = 0.99 if alias == canonical_text(symbol) else 0.95
+                    matches.append(EntityMatch(symbol, alias, match.start(), match.end(), confidence))
         return self._remove_overlaps(matches)
 
     @staticmethod
