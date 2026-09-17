@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,6 +10,7 @@ from .deduplication import deduplicate
 from .entity_resolution import InstrumentResolver, EntityMatch
 from .evidence import EvidenceAssessment, assess_evidence
 from .normalize import normalized_observation
+from .novelty import NoveltyEngine
 from .semantic import SemanticEvent, SemanticExtractor
 
 
@@ -34,6 +35,7 @@ class StoryEngine:
         if semantic_rules_file is None:
             semantic_rules_file = Path(instrument_file).parent / "semantic_rules.yaml"
         self.semantic_extractor = SemanticExtractor(semantic_rules_file)
+        self.novelty_engine = NoveltyEngine()
 
     def acquire(self, feeds: list[dict], since: datetime | None = None) -> list[RawObservation]:
         observations: list[RawObservation] = []
@@ -51,11 +53,47 @@ class StoryEngine:
             )
         return [normalized_observation(item) for item in observations]
 
-    def build_stories(self, observations: list[RawObservation]) -> list[StoryIntelligence]:
+    def build_stories(
+        self,
+        observations: list[RawObservation],
+        historical_events: tuple[SemanticEvent, ...] = (),
+        *,
+        as_of: datetime | None = None,
+    ) -> list[StoryIntelligence]:
         decisions = deduplicate(observations)
         unique = [decision.observation for decision in decisions if decision.duplicate_of is None]
         stories = cluster_stories(unique)
-        return [self._intelligence(story) for story in stories]
+        intelligence = [self._intelligence(story) for story in stories]
+        if not historical_events:
+            return intelligence
+
+        return [
+            replace(
+                item,
+                semantic_events=tuple(
+                    replace(
+                        event,
+                        novelty_status=self.novelty_engine.assess(
+                            event,
+                            historical_events,
+                            as_of=as_of,
+                        ).status,
+                        novelty_score=self.novelty_engine.assess(
+                            event,
+                            historical_events,
+                            as_of=as_of,
+                        ).score,
+                        novelty_reason=self.novelty_engine.assess(
+                            event,
+                            historical_events,
+                            as_of=as_of,
+                        ).reason,
+                    )
+                    for event in item.semantic_events
+                ),
+            )
+            for item in intelligence
+        ]
 
     def _intelligence(self, story: StoryCluster) -> StoryIntelligence:
         text = " ".join(f"{item.title} {item.summary}" for item in story.observations)
