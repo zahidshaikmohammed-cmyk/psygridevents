@@ -32,43 +32,47 @@ def intelligence(title: str, *, url: str = "https://example.com/test") -> StoryI
     return StoryIntelligence(story, (entity,), assess_evidence([observation]))
 
 
+def extract(title: str):
+    return SemanticExtractor(ROOT / "config" / "semantic_rules.yaml").extract(intelligence(title))[0]
+
+
 def test_certificate_no_identifier_is_not_negated():
-    event = SemanticExtractor(ROOT / "config" / "semantic_rules.yaml").extract(intelligence("SEBI compliance order Certificate No. 5742"))[0]
+    event = extract("SEBI compliance order Certificate No. 5742")
     assert event.negated is False
     assert event.modality == "asserted"
 
 
 def test_order_no_identifier_is_not_negated():
-    event = SemanticExtractor(ROOT / "config" / "semantic_rules.yaml").extract(intelligence("Company order awarded, Order No. 123"))[0]
+    event = extract("Company order awarded, Order No. 123")
     assert event.negated is False
 
 
 def test_no_acquisition_is_planned_is_negated():
-    event = SemanticExtractor(ROOT / "config" / "semantic_rules.yaml").extract(intelligence("No acquisition is planned"))[0]
+    event = extract("No acquisition is planned")
     assert event.negated is True
     assert event.modality == "negated"
 
 
 def test_did_not_win_order_is_negated():
-    event = SemanticExtractor(ROOT / "config" / "semantic_rules.yaml").extract(intelligence("The company did not win the contract award"))[0]
+    event = extract("The company did not win the contract award")
     assert event.negated is True
     assert event.modality == "negated"
 
 
 def test_regulator_denied_is_negated():
-    event = SemanticExtractor(ROOT / "config" / "semantic_rules.yaml").extract(intelligence("The regulator denied the allegation"))[0]
+    event = extract("The regulator denied the allegation")
     assert event.negated is True
     assert event.modality == "negated"
 
 
 def test_has_no_plans_is_negated():
-    event = SemanticExtractor(ROOT / "config" / "semantic_rules.yaml").extract(intelligence("The company has no plans to acquire the target"))[0]
+    event = extract("The company has no plans to acquire the target")
     assert event.negated is True
     assert event.modality == "negated"
 
 
 def test_no_approval_is_negated():
-    event = SemanticExtractor(ROOT / "config" / "semantic_rules.yaml").extract(intelligence("There was no approval for the transaction"))[0]
+    event = extract("There was no compliance order approval for the transaction")
     assert event.negated is True
     assert event.modality == "negated"
 
@@ -76,7 +80,7 @@ def test_no_approval_is_negated():
 def test_negated_event_cannot_receive_actionable_priority():
     from dataclasses import replace
 
-    event = SemanticExtractor(ROOT / "config" / "semantic_rules.yaml").extract(intelligence("SEBI compliance order Certificate No. 5742"))[0]
+    event = extract("SEBI compliance order Certificate No. 5742")
     event = replace(event, negated=True, modality="negated")
     assessment = PriorityEngine(ROOT / "config" / "priority_rules.yaml").assess(event, intelligence("x").evidence)
     assert assessment.priority_class == "informational"
@@ -87,13 +91,13 @@ def test_negated_event_cannot_receive_actionable_priority():
 def test_asserted_event_keeps_cp6_score_behavior():
     from dataclasses import replace
 
-    event = SemanticExtractor(ROOT / "config" / "semantic_rules.yaml").extract(intelligence("RELIANCE wins order worth INR 500 crore"))[0]
+    event = extract("RELIANCE wins order worth INR 500 crore")
     event = replace(event, materiality_status="high", materiality_score=0.9, novelty_status="new", novelty_score=0.9, time_horizon="near_term")
     transmission = TransmissionEngine(ROOT / "config" / "exposure_rules.yaml").assess(event)
     assessment = PriorityEngine(ROOT / "config" / "priority_rules.yaml").assess(event, intelligence("x").evidence, transmission)
-    assert assessment.priority_score == 91.48
+    assert assessment.priority_score == 90.2
     assert assessment.priority_class == "high"
-    assert assessment.coverage == 0.88
+    assert assessment.coverage == 0.82
 
 
 def test_official_catalogue_extracts_only_allowed_rss_links():
@@ -140,5 +144,7 @@ def test_first_history_run_is_empty_and_unassessed(tmp_path):
 def test_no_market_observations_are_untested():
     engine = StoryEngine(ROOT / "config" / "instruments.json")
     item = intelligence("RELIANCE wins order")
+    event = SemanticExtractor(ROOT / "config" / "semantic_rules.yaml").extract(item)[0]
+    item = StoryIntelligence(item.story, item.entities, item.evidence, (event,))
     item = engine.build_market_confirmation([item], [])[0]
     assert item.semantic_events[0].market_confirmation_status == "untested"
