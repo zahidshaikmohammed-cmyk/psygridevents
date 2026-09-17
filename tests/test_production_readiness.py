@@ -100,6 +100,34 @@ def test_asserted_event_keeps_cp6_score_behavior():
     assert assessment.coverage == 0.82
 
 
+def test_clustering_reuses_tokens_without_changing_grouping(monkeypatch):
+    from psygridevents import clustering
+
+    now = datetime(2026, 9, 17, 8, tzinfo=timezone.utc)
+    observations = [
+        RawObservation("test", 0, "Source A", "RBI cuts repo rate", "https://example.com/a", "RBI cuts repo rate", now, now, {}),
+        RawObservation("test", 0, "Source B", "RBI cuts policy repo rate", "https://example.com/b", "RBI cuts policy repo rate", now, now, {}),
+        RawObservation("test", 0, "Source C", "Company launches new product", "https://example.com/c", "Company launches new product", now, now, {}),
+    ]
+    calls = 0
+    original = clustering.canonical_text
+
+    def counted(value: str) -> str:
+        nonlocal calls
+        calls += 1
+        return original(value)
+
+    monkeypatch.setattr(clustering, "canonical_text", counted)
+    clusters = clustering.cluster_stories(observations)
+
+    assert clustering.cluster_stories.__defaults__ == (0.42,)
+    assert [[item.url for item in cluster.observations] for cluster in clusters] == [
+        ["https://example.com/a", "https://example.com/b"],
+        ["https://example.com/c"],
+    ]
+    assert calls == len(observations)
+
+
 def test_official_catalogue_extracts_only_allowed_rss_links():
     html = '<a href="/feeds/a_rss.xml">A</a><a href="https://example.com/b.xml">B</a><a href="/page">Page</a>'
     assert extract_feed_links("https://official.example/catalogue", html, allowed_hosts={"official.example"}) == ("https://official.example/feeds/a_rss.xml",)
