@@ -5,104 +5,103 @@ version: "1.0.0"
 event_rules:
   earnings:
     base_confidence: 0.86
-    triggers: ["results", "earnings", "revenue", "profit", "ebitda", "eps", "guidance", "outlook"]
+    triggers: [results, earnings, revenue, profit, ebitda, eps, guidance, outlook]
   order:
     base_confidence: 0.84
-    triggers: ["order win", "order book", "contract", "purchase order", "awarded", "award"]
+    triggers: ["order win", "order book", contract, "purchase order", awarded, award]
   capital_action:
     base_confidence: 0.90
-    triggers: ["buyback", "dividend", "bonus issue", "stock split", "rights issue", "preferential issue", "fund raise"]
+    triggers: [buyback, dividend, "bonus issue", "stock split", "rights issue", "preferential issue", "fund raise"]
   merger_acquisition:
     base_confidence: 0.90
-    triggers: ["acquire", "acquisition", "merger", "demerger", "stake purchase", "divestment"]
+    triggers: [acquire, acquisition, merger, demerger, "stake purchase", divestment]
   regulation:
     base_confidence: 0.88
-    triggers: ["sebi", "regulator", "regulatory action", "penalty", "compliance order", "show cause notice"]
+    triggers: [sebi, regulator, "regulatory action", penalty, "compliance order", "show cause notice"]
   government_policy:
     base_confidence: 0.84
-    triggers: ["tariff", "subsidy", "incentive", "tax", "duty", "government policy", "budget"]
+    triggers: [tariff, subsidy, incentive, tax, duty, "government policy", budget]
   macro:
     base_confidence: 0.82
-    triggers: ["inflation", "cpi", "wpi", "gdp", "pmi", "unemployment", "industrial production"]
+    triggers: [inflation, cpi, wpi, gdp, pmi, unemployment, "industrial production"]
   central_bank:
     base_confidence: 0.90
-    triggers: ["repo rate", "policy rate", "rate cut", "rate hike", "liquidity", "rbi"]
+    triggers: ["repo rate", "policy rate", "rate cut", "rate hike", liquidity, rbi]
   commodity:
     base_confidence: 0.80
-    triggers: ["crude oil", "natural gas", "coal", "copper", "aluminium", "steel prices", "commodity"]
+    triggers: ["crude oil", "natural gas", coal, copper, aluminium, "steel prices", commodity]
   geopolitical:
     base_confidence: 0.80
-    triggers: ["sanctions", "trade restriction", "export ban", "war", "conflict", "shipping disruption"]
+    triggers: [sanctions, "trade restriction", "export ban", war, conflict, "shipping disruption"]
   legal:
     base_confidence: 0.86
-    triggers: ["lawsuit", "litigation", "court order", "settlement", "investigation", "injunction"]
+    triggers: [lawsuit, litigation, "court order", settlement, investigation, injunction]
   rating:
     base_confidence: 0.90
     triggers: ["credit rating", "rating upgrade", "rating downgrade", "rating outlook"]
   management:
     base_confidence: 0.82
-    triggers: ["appointed", "resigned", "ceo", "cfo", "managing director", "management change"]
+    triggers: [appointed, resigned, ceo, cfo, "managing director", "management change"]
   operational:
     base_confidence: 0.84
-    triggers: ["plant shutdown", "plant outage", "production cut", "capacity expansion", "fire", "cyber attack", "production disruption"]
+    triggers: ["plant shutdown", "plant outage", "production cut", "capacity expansion", fire, "cyber attack", "production disruption"]
   corporate:
     base_confidence: 0.62
     triggers: ["board meeting", "corporate announcement", "material disclosure"]
 
 negation_patterns:
-  - "\bno\b"
-  - "\bnot\b"
-  - "\bdenied\b"
-  - "\bdenies\b"
-  - "\bdenied that\b"
-  - "\bno plans to\b"
-  - "\bhas not\b"
+  - '\\bno\\b'
+  - '\\bnot\\b'
+  - '\\bdenied\\b'
+  - '\\bdenies\\b'
+  - '\\bdenied that\\b'
+  - '\\bno plans to\\b'
+  - '\\bhas not\\b'
 
 modality_patterns:
   hypothetical:
-    - "\bmay\b"
-    - "\bmight\b"
-    - "\bcould\b"
-    - "\bpotentially\b"
+    - '\\bmay\\b'
+    - '\\bmight\\b'
+    - '\\bcould\\b'
+    - '\\bpotentially\\b'
   planned:
-    - "\bplans to\b"
-    - "\bwill\b"
-    - "\bexpected to\b"
-    - "\bset to\b"
+    - '\\bplans to\\b'
+    - '\\bwill\\b'
+    - '\\bexpected to\\b'
+    - '\\bset to\\b'
   reported:
-    - "\breportedly\b"
-    - "\bsources said\b"
-    - "\baccording to sources\b"
+    - '\\breportedly\\b'
+    - '\\bsources said\\b'
+    - '\\baccording to sources\\b'
 
 horizon_patterns:
   immediate:
-    - "\btoday\b"
-    - "\bimmediately\b"
-    - "\bwith immediate effect\b"
+    - '\\btoday\\b'
+    - '\\bimmediately\\b'
+    - '\\bwith immediate effect\\b'
   near_term:
-    - "\bthis quarter\b"
-    - "\bnext quarter\b"
-    - "\bcoming months\b"
-    - "\bnext few months\b"
+    - '\\bthis quarter\\b'
+    - '\\bnext quarter\\b'
+    - '\\bcoming months\\b'
+    - '\\bnext few months\\b'
   medium_term:
-    - "\bnext year\b"
-    - "\bby 20\d{2}\b"
-    - "\bmedium term\b"
+    - '\\bnext year\\b'
+    - '\\bby 20\\d{2}\\b'
+    - '\\bmedium term\\b'
   long_term:
-    - "\blong term\b"
-    - "\bover the next \d+ years\b"
+    - '\\blong term\\b'
+    - '\\bover the next \\d+ years\\b'
 
-# These patterns extract explicit wording only; they do not invent causal effects.
 effect_patterns:
   direct:
-    - "(?:revenue|profit|ebitda|margin|capacity|production|sales)\s+(?:rose|fell|increased|decreased|declined|grew|expanded|contracted)[^.]*"
-    - "(?:costs?|expenses?)\s+(?:rose|fell|increased|decreased|declined|grew)[^.]*"
+    - '(?:revenue|profit|ebitda|margin|capacity|production|sales)\\s+(?:rose|fell|increased|decreased|declined|grew|expanded|contracted)[^.]*'
+    - '(?:costs?|expenses?)\\s+(?:rose|fell|increased|decreased|declined|grew)[^.]*'
   indirect:
-    - "(?:could|may|is expected to)\s+(?:affect|impact|benefit|hurt)[^.]*"
+    - '(?:could|may|is expected to)\\s+(?:affect|impact|benefit|hurt)[^.]*'
   competitor:
-    - "(?:competitors?|rivals?)\s+(?:could|may|are expected to)[^.]*"
+    - '(?:competitors?|rivals?)\\s+(?:could|may|are expected to)[^.]*'
   supply_chain:
-    - "(?:supplier|suppliers|customer|customers|supply chain|input costs?)\s+[^.]*"
+    - '(?:supplier|suppliers|customer|customers|supply chain|input costs?)\\s+[^.]*'
 
 # Captures common financial magnitudes without assigning economic meaning.
-magnitude_regex: "(?:₹|INR|Rs\.?|USD|US\$|\$|EUR|€|AED)\s?[0-9][0-9,]*(?:\.[0-9]+)?\s?(?:crore|lakh|million|billion|trillion|mn|bn|tn)?|[0-9][0-9,]*(?:\.[0-9]+)?\s?(?:%|percent|bps|basis points|MW|GW|tonnes|tons|barrels|million|billion|crore|lakh)"
+magnitude_regex: '(?:₹|INR|Rs\\.?|USD|US\\$|\\$|EUR|€|AED)\\s?[0-9][0-9,]*(?:\\.[0-9]+)?\\s?(?:crore|lakh|million|billion|trillion|mn|bn|tn)?|[0-9][0-9,]*(?:\\.[0-9]+)?\\s?(?:%|percent|bps|basis points|MW|GW|tonnes|tons|barrels|million|billion|crore|lakh)'
