@@ -1,0 +1,47 @@
+version: "1.0.0"
+
+# These are mechanism templates, not automatic market calls.
+# A channel is usable only when issuer metadata explicitly connects an instrument
+# to the stated sector. Missing metadata means no second-order link is emitted.
+event_channels:
+  commodity:
+    - sector: "energy"
+      relationship: "input_cost"
+      mechanism: "commodity_price_to_input_cost"
+      horizon: "near_term"
+      confidence: 0.78
+    - sector: "metals"
+      relationship: "input_cost"
+      mechanism: "commodity_price_to_input_cost"
+      horizon: "near_term"
+      confidence: 0.78
+  government_policy:
+    - sector: "all"
+      relationship: "policy_scope"
+      mechanism: "policy_to_sector_economics"
+      horizon: "medium_term"
+      confidence: 0.65
+  regulation:
+    - sector: "all"
+      relationship: "regulatory_scope"
+      mechanism: "regulation_to_compliance_or_business_model"
+      horizon: "medium_term"
+      confidence: 0.65
+  central_bank:
+    - sector: "financials"
+      relationship: "financing_conditions"
+      mechanism: "policy_rate_to_credit_transmission"
+      horizon: "near_term"
+      confidence: 0.76
+  macro:
+    - sector: "all"
+      relationship: "macro_exposure"
+      mechanism: "macro_release_to_demand_or_financial_conditions"
+      horizon: "medium_term"
+      confidence: 0.62
+  geopolitical:
+    - sector: "all"
+      relationship: "trade_or_supply_exposure"
+      mechanism: "geopolitical_shock_to_trade_supply_or_risk"
+      horizon: "near_term"
+      confidence: 0.68
