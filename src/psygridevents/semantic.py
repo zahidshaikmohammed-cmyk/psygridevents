@@ -132,18 +132,11 @@ class SemanticExtractor:
         return candidates[:3]
 
     def _is_negated(self, sentence: str, trigger: str) -> bool:
-        window_start = max(0, sentence.lower().find(trigger.lower()) - 120)
-        context = sentence[window_start:]
-        # Explicit verb negation and determiner constructions are safe signals.
-        if re.search(r"\b(?:did|does|do|is|are|was|were|has|have|had|will)\s+not\b", context, re.I):
-            return True
-        if re.search(r"\bden(?:y|ies|ied|ial)\b", context, re.I):
-            return True
-        if re.search(r"\bno\s+(?:acquisition|approval|plan|plans|intention|agreement|deal|evidence|impact|effect)\b", context, re.I):
-            return True
-        if re.search(r"\b(?:has|have|had)\s+no\s+(?:plan|plans|intention|approval|agreement|deal)\b", context, re.I):
-            return True
-        return False
+        position = sentence.lower().find(trigger.lower())
+        if position < 0:
+            return False
+        context = sentence[max(0, position - 120):]
+        return any(re.search(pattern, context, re.I) for pattern in self.negation_patterns)
 
     @staticmethod
     def _document_text(observation: RawObservation) -> str:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
 
 import yaml
 
@@ -25,10 +26,13 @@ def _load_feeds() -> list[dict]:
         if feed.get("mode") != "catalogue" or not feed.get("enabled"):
             resolved.append(feed)
             continue
+        allowed_hosts = None
+        if feed.get("provider_id") == "nse_catalogue":
+            allowed_hosts = {"www.nseindia.com", "nsearchives.nseindia.com"}
         try:
-            discovered = resolve_official_rss_catalogue(feed["url"])
+            discovered = resolve_official_rss_catalogue(feed["url"], allowed_hosts=allowed_hosts)
         except CatalogueResolutionError as exc:
-            print(f"Catalogue resolution skipped: {feed['provider_id']}: {exc}")
+            print(f"Catalogue resolution skipped: {feed['provider_id']}: {exc}", file=sys.stderr)
             continue
         for index, url in enumerate(discovered, start=1):
             resolved.append({
@@ -81,6 +85,8 @@ def main() -> None:
         return
 
     feeds = _load_feeds()
+    if not args.json:
+        print(f"Enabled verified acquisition feeds: {sum(1 for feed in feeds if feed.get('enabled'))}")
     engine = StoryEngine(ROOT / "config" / "instruments.json")
     historical = engine.load_history(HISTORY_FILE)
     observations = engine.acquire(feeds)

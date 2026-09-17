@@ -16,14 +16,25 @@ def _is_http_url(value: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
-def extract_feed_links(catalogue_url: str, html: str, *, allowed_hosts: set[str] | None = None) -> tuple[str, ...]:
-    """Extract only concrete feed-looking links present in an official catalogue document."""
-    allowed_hosts = allowed_hosts or {urlparse(catalogue_url).netloc}
+def extract_feed_links(
+    catalogue_url: str,
+    html: str,
+    *,
+    allowed_hosts: set[str] | None = None,
+) -> tuple[str, ...]:
+    """Extract feed-looking URLs that are explicitly linked by an official catalogue."""
+    catalogue_host = urlparse(catalogue_url).netloc
     hrefs = re.findall(r"href=[\"']([^\"']+)[\"']", html, re.IGNORECASE)
     links: list[str] = []
     for href in hrefs:
         candidate = urljoin(catalogue_url, href).strip()
-        if not _is_http_url(candidate) or urlparse(candidate).netloc not in allowed_hosts:
+        if not _is_http_url(candidate):
+            continue
+        host = urlparse(candidate).netloc
+        if allowed_hosts is None:
+            if host != catalogue_host:
+                continue
+        elif host not in allowed_hosts:
             continue
         lower = candidate.lower()
         if not any(token in lower for token in ("rss", "feed", "xml")):
@@ -34,7 +45,7 @@ def extract_feed_links(catalogue_url: str, html: str, *, allowed_hosts: set[str]
 
 
 def validate_rss_url(url: str, *, client: httpx.Client | None = None) -> bool:
-    """Return true only when a discovered URL actually parses as RSS/Atom with entries."""
+    """Return true only when a candidate actually parses as a non-empty RSS/Atom feed."""
     if not _is_http_url(url):
         return False
     owns_client = client is None
@@ -55,8 +66,13 @@ def validate_rss_url(url: str, *, client: httpx.Client | None = None) -> bool:
             client.close()
 
 
-def resolve_official_rss_catalogue(catalogue_url: str, *, client: httpx.Client | None = None) -> tuple[str, ...]:
-    """Resolve and validate only feed links explicitly published by an official catalogue."""
+def resolve_official_rss_catalogue(
+    catalogue_url: str,
+    *,
+    client: httpx.Client | None = None,
+    allowed_hosts: set[str] | None = None,
+) -> tuple[str, ...]:
+    """Resolve and validate only links published by an official RSS catalogue."""
     owns_client = client is None
     client = client or httpx.Client(
         timeout=15.0,
@@ -66,7 +82,7 @@ def resolve_official_rss_catalogue(catalogue_url: str, *, client: httpx.Client |
     try:
         response = client.get(catalogue_url)
         response.raise_for_status()
-        links = extract_feed_links(catalogue_url, response.text)
+        links = extract_feed_links(catalogue_url, response.text, allowed_hosts=allowed_hosts)
         return tuple(link for link in links if validate_rss_url(link, client=client))
     except (httpx.HTTPError, ValueError, TypeError) as exc:
         raise CatalogueResolutionError(f"Official RSS catalogue resolution failed: {exc}") from exc
