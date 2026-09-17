@@ -71,20 +71,20 @@ class SemanticExtractor:
         self.magnitude_pattern = re.compile(data.get("magnitude_regex", r"$^"), re.I)
 
     def extract(self, intelligence: StoryIntelligence) -> list[SemanticEvent]:
+        representative = intelligence.story.representative
+        text = self._document_text(representative)
         events: list[SemanticEvent] = []
-        for observation in intelligence.story.observations:
-            text = self._document_text(observation)
-            for event_type, trigger, score in self._candidate_types(text):
-                event = self._build_event(
+        for event_type, trigger, score in self._candidate_types(text):
+            events.append(
+                self._build_event(
                     intelligence,
-                    observation,
+                    representative,
                     event_type=event_type,
                     trigger=trigger,
                     trigger_score=score,
                 )
-                if event is not None:
-                    events.append(event)
-        return self._merge_event_candidates(events)
+            )
+        return events
 
     def _build_event(
         self,
@@ -116,6 +116,7 @@ class SemanticExtractor:
             uncertainty.append("No quantified magnitude was extracted from the event sentence.")
         if modality != "asserted":
             uncertainty.append(f"Source language is marked as {modality}.")
+        uncertainty.append("Event timestamp is source publication time unless an explicit event date is extracted later.")
 
         confidence = min(0.99, max(0.20, trigger_score))
         if not matched_entities:
@@ -128,16 +129,15 @@ class SemanticExtractor:
             story_id=story_id,
             event_type=event_type,
             instruments=matched_entities,
-            trigger=trigger,
-            sentence=sentence,
         )
-        evidence = (
+        evidence = tuple(
             EvidenceSpan(
-                observation_url=observation.url,
-                publisher=observation.publisher,
-                text=sentence,
-                source_tier=observation.source_tier,
-            ),
+                observation_url=item.url,
+                publisher=item.publisher,
+                text=self._document_text(item)[:1000],
+                source_tier=item.source_tier,
+            )
+            for item in intelligence.story.observations
         )
         return SemanticEvent(
             event_id=event_id,
@@ -231,15 +231,6 @@ class SemanticExtractor:
         return "story-" + hashlib.sha256(canonical_text(text).encode("utf-8")).hexdigest()[:20]
 
     @staticmethod
-    def _event_id(*, story_id: str, event_type: str, instruments: tuple[str, ...], trigger: str, sentence: str) -> str:
-        key = "|".join((story_id, event_type, ",".join(instruments), trigger, canonical_text(sentence)))
+    def _event_id(*, story_id: str, event_type: str, instruments: tuple[str, ...]) -> str:
+        key = "|".join((story_id, event_type, ",".join(instruments)))
         return "event-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
-
-    @staticmethod
-    def _merge_event_candidates(events: list[SemanticEvent]) -> list[SemanticEvent]:
-        merged: dict[str, SemanticEvent] = {}
-        for event in events:
-            existing = merged.get(event.event_id)
-            if existing is None or event.extraction_confidence > existing.extraction_confidence:
-                merged[event.event_id] = event
-        return list(merged.values())
