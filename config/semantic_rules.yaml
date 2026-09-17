@@ -1,4 +1,4 @@
-version: "1.0.0"
+version: "1.1.0"
 
 event_rules:
   earnings:
@@ -47,6 +47,9 @@ event_rules:
     base_confidence: 0.62
     triggers: ["board meeting", "corporate announcement", "material disclosure"]
 
+# Negation is evaluated contextually in code. "no" is retained as a signal,
+# but legal/regulatory identifier forms such as "Certificate No. 5742" are
+# explicitly excluded so identifiers cannot become semantic negation.
 negation_patterns:
   - '\bno\b'
   - '\bnot\b'
@@ -55,6 +58,8 @@ negation_patterns:
   - '\bdenied that\b'
   - '\bno plans to\b'
   - '\bhas not\b'
+negation_exclusions:
+  - '\b(?:order|certificate|case|appeal)\s+no\.?\b'
 
 modality_patterns:
   hypothetical:
