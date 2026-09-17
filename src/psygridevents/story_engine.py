@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .acquisition import RSSAcquirer, RawObservation
 from .clustering import StoryCluster, cluster_stories
+from .contradiction import ContradictionAssessment, ContradictionEngine
 from .deduplication import deduplicate
 from .entity_resolution import InstrumentResolver, EntityMatch
 from .evidence import EvidenceAssessment, assess_evidence
@@ -23,6 +24,7 @@ class StoryIntelligence:
     evidence: EvidenceAssessment
     semantic_events: tuple[SemanticEvent, ...] = ()
     transmissions: tuple[TransmissionAssessment, ...] = ()
+    contradictions: tuple[ContradictionAssessment, ...] = ()
 
 
 class StoryEngine:
@@ -35,19 +37,24 @@ class StoryEngine:
         materiality_rules_file: str | Path | None = None,
         exposure_rules_file: str | Path | None = None,
         issuer_metadata_file: str | Path | None = None,
+        contradiction_rules_file: str | Path | None = None,
     ) -> None:
         self.acquirer = RSSAcquirer()
         self.resolver = InstrumentResolver.from_instrument_file(instrument_file)
+        config_dir = Path(instrument_file).parent
         if semantic_rules_file is None:
-            semantic_rules_file = Path(instrument_file).parent / "semantic_rules.yaml"
+            semantic_rules_file = config_dir / "semantic_rules.yaml"
         if materiality_rules_file is None:
-            materiality_rules_file = Path(instrument_file).parent / "materiality_rules.yaml"
+            materiality_rules_file = config_dir / "materiality_rules.yaml"
         if exposure_rules_file is None:
-            exposure_rules_file = Path(instrument_file).parent / "exposure_rules.yaml"
+            exposure_rules_file = config_dir / "exposure_rules.yaml"
+        if contradiction_rules_file is None:
+            contradiction_rules_file = config_dir / "contradiction_rules.yaml"
         self.semantic_extractor = SemanticExtractor(semantic_rules_file)
         self.novelty_engine = NoveltyEngine()
         self.materiality_engine = MaterialityEngine(materiality_rules_file)
         self.transmission_engine = TransmissionEngine(exposure_rules_file, issuer_metadata_file)
+        self.contradiction_engine = ContradictionEngine(contradiction_rules_file)
 
     def acquire(self, feeds: list[dict], since: datetime | None = None) -> list[RawObservation]:
         observations: list[RawObservation] = []
@@ -82,17 +89,30 @@ class StoryEngine:
         assessed: list[StoryIntelligence] = []
         for item in intelligence:
             updated_events: list[SemanticEvent] = []
+            contradictions: list[ContradictionAssessment] = []
             for event in item.semantic_events:
-                assessment = self.novelty_engine.assess(event, historical_events, as_of=as_of)
+                novelty = self.novelty_engine.assess(event, historical_events, as_of=as_of)
+                contradiction = self.contradiction_engine.assess(event, historical_events)
+                contradictions.append(contradiction)
                 updated_events.append(
                     replace(
                         event,
-                        novelty_status=assessment.status,
-                        novelty_score=assessment.score,
-                        novelty_reason=assessment.reason,
+                        novelty_status=novelty.status,
+                        novelty_score=novelty.score,
+                        novelty_reason=novelty.reason,
+                        contradiction_status=contradiction.status,
+                        narrative_state=contradiction.narrative_state,
+                        contradiction_score=contradiction.similarity,
+                        contradiction_reason=contradiction.reason,
                     )
                 )
-            assessed.append(replace(item, semantic_events=tuple(updated_events)))
+            assessed.append(
+                replace(
+                    item,
+                    semantic_events=tuple(updated_events),
+                    contradictions=tuple(contradictions),
+                )
+            )
         return assessed
 
     def build_materiality(
@@ -125,6 +145,34 @@ class StoryEngine:
         for item in intelligence:
             transmissions = self.transmission_engine.assess_many(item.semantic_events)
             result.append(replace(item, transmissions=transmissions))
+        return result
+
+    def build_contradiction(
+        self,
+        intelligence: list[StoryIntelligence],
+        historical_events: tuple[SemanticEvent, ...],
+    ) -> list[StoryIntelligence]:
+        """Attach contradiction and narrative state against historical events."""
+        result: list[StoryIntelligence] = []
+        for item in intelligence:
+            assessments = self.contradiction_engine.assess_many(item.semantic_events, historical_events)
+            events = [
+                replace(
+                    event,
+                    contradiction_status=assessment.status,
+                    narrative_state=assessment.narrative_state,
+                    contradiction_score=assessment.similarity,
+                    contradiction_reason=assessment.reason,
+                )
+                for event, assessment in zip(item.semantic_events, assessments)
+            ]
+            result.append(
+                replace(
+                    item,
+                    semantic_events=tuple(events),
+                    contradictions=assessments,
+                )
+            )
         return result
 
     def _intelligence(self, story: StoryCluster) -> StoryIntelligence:
