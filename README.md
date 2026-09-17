@@ -23,7 +23,7 @@ Its job is not to collect headlines and attach a generic sentiment label. It is 
 
 **FACT → EVENT → EXPOSURE → MECHANISM → IMPACT → CONTEXT → CONFIRMATION → INTELLIGENCE**
 
-The engine is intentionally hybrid. Deterministic Python handles ingestion, normalization, validation, deduplication, clustering, entity resolution, semantic extraction, exposure mapping, prioritization and data contracts. A future reasoning layer can enrich events with semantic interpretation without becoming the source of truth for infrastructure.
+The engine is intentionally hybrid. Deterministic Python handles ingestion, normalization, validation, deduplication, clustering, entity resolution, semantic extraction, exposure mapping, prioritization and delivery contracts. A future reasoning layer can enrich events with semantic interpretation without becoming the source of truth for infrastructure.
 
 ## Precision principles
 
@@ -102,6 +102,8 @@ CP6 explainable prioritization
       ↓
 Deterministic ranking
       ↓
+CP7 delivery contract
+      ↓
 Machine-readable intelligence
 ```
 
@@ -138,6 +140,10 @@ Direct exposure can be emitted when an event explicitly resolves to a configured
 
 Priority uses eight configured dimensions: source confidence, novelty, surprise, financial materiality, exposure, market relevance, persistence and transmission. Missing or explicitly unknown factors are excluded rather than fabricated, and model coverage is retained with every assessment. The score is an explainable prioritization measure, not a probability of price movement.
 
+### CP7 delivery contract
+
+`python -m psygridevents.main --once --json` emits a versioned JSON document containing story provenance, structured events and ranked events. Every ranked event carries its event payload and the exact priority assessment, including component scores, coverage and missing factors. Raw provider payloads are excluded from the delivery boundary. See `docs/CP7_DELIVERY.md` for the full contract.
+
 ## Running
 
 Run the package normally for diagnostics:
@@ -146,16 +152,28 @@ Run the package normally for diagnostics:
 python -m psygridevents.main
 ```
 
-Run the currently enabled verified first-party feeds once:
+Run the currently enabled verified first-party feeds once with human-readable ranking:
 
 ```bash
 python -m psygridevents.main --once
+```
+
+Emit the machine-readable delivery contract:
+
+```bash
+python -m psygridevents.main --once --json
+```
+
+Limit human-readable ranked output:
+
+```bash
+python -m psygridevents.main --once --limit 10
 ```
 
 No API keys are stored in the repository. Licensed providers remain disabled until credentials and entitlements are supplied.
 
 ## Status
 
-**CP6 — Explainable intelligence prioritization implemented.** The repository now has the semantic/event foundation, explicit transmission, novelty/materiality/contradiction context, synchronized market confirmation, and deterministic eight-factor prioritization with regression coverage.
+**CP7 — Delivery/output contract implemented.** The repository now has the semantic/event foundation, explicit transmission, novelty/materiality/contradiction context, synchronized market confirmation, deterministic eight-factor prioritization, and a versioned production-facing JSON/CLI delivery boundary with regression coverage.
 
-Next: **CP7 — delivery/output contract and production-facing intelligence feed.**
+Next: production integrations that consume the CP7 contract, followed by historical evaluation and calibration rather than adding opaque scoring layers.

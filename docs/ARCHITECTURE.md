@@ -21,7 +21,7 @@ Optionally consume synchronized market observations to determine whether price/v
 Produce an explainable priority score and materiality class.
 
 ### Plane G — Delivery
-Expose ranked intelligence as JSON, CLI output and eventually an API/dashboard.
+Expose ranked intelligence through a versioned JSON contract and deterministic CLI output. HTTP/API/dashboard integrations consume this boundary rather than bypassing the intelligence pipeline.
 
 ## Event lifecycle
 
@@ -35,6 +35,7 @@ DISCOVERED
   → CONTEXTUALIZED
   → IMPACT-ASSESSED
   → MARKET-CONFIRMED / MARKET-CONTRADICTED / UNTESTED
+  → PRIORITIZED
   → PUBLISHED
 ```
 
@@ -42,7 +43,7 @@ An event can move backward in certainty when a source is corrected or contradict
 
 ## Priority dimensions
 
-The foundation scorer currently uses eight explicit dimensions:
+The foundation scorer uses eight explicit dimensions:
 
 - source confidence
 - novelty
@@ -54,6 +55,10 @@ The foundation scorer currently uses eight explicit dimensions:
 - transmission
 
 The weights are configuration and will be versioned when calibrated against historical outcomes. The score is an intelligence-prioritization measure, not a probability of price movement.
+
+## CP7 delivery contract
+
+The delivery layer emits a stable top-level JSON object containing `schema_version`, `generated_at`, `engine`, `stories`, `ranked_events` and `summary`. Ranked entries contain the event and its exact priority assessment, including component scores, coverage, available/missing factors and explanation. Source provenance is retained while raw provider payloads are excluded.
 
 ## Future modules
 
