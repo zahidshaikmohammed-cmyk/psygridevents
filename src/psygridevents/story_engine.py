@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
+import json
 
 from .acquisition import RSSAcquirer, RawObservation
 from .clustering import StoryCluster, cluster_stories
@@ -33,192 +34,79 @@ class StoryIntelligence:
 
 
 class StoryEngine:
-    """Acquisition-to-semantic-event pipeline with explicit provenance."""
+    """Acquisition-to-priority pipeline with explicit fail-closed CP stages."""
 
-    def __init__(
-        self,
-        instrument_file: str | Path,
-        semantic_rules_file: str | Path | None = None,
-        materiality_rules_file: str | Path | None = None,
-        exposure_rules_file: str | Path | None = None,
-        issuer_metadata_file: str | Path | None = None,
-        contradiction_rules_file: str | Path | None = None,
-        market_confirmation_rules_file: str | Path | None = None,
-        priority_rules_file: str | Path | None = None,
-    ) -> None:
+    def __init__(self, instrument_file: str | Path, semantic_rules_file: str | Path | None = None, materiality_rules_file: str | Path | None = None, exposure_rules_file: str | Path | None = None, issuer_metadata_file: str | Path | None = None, contradiction_rules_file: str | Path | None = None, market_confirmation_rules_file: str | Path | None = None, priority_rules_file: str | Path | None = None) -> None:
         self.acquirer = RSSAcquirer()
         self.resolver = InstrumentResolver.from_instrument_file(instrument_file)
         config_dir = Path(instrument_file).parent
-        if semantic_rules_file is None:
-            semantic_rules_file = config_dir / "semantic_rules.yaml"
-        if materiality_rules_file is None:
-            materiality_rules_file = config_dir / "materiality_rules.yaml"
-        if exposure_rules_file is None:
-            exposure_rules_file = config_dir / "exposure_rules.yaml"
-        if contradiction_rules_file is None:
-            contradiction_rules_file = config_dir / "contradiction_rules.yaml"
-        if market_confirmation_rules_file is None:
-            market_confirmation_rules_file = config_dir / "market_confirmation_rules.yaml"
-        if priority_rules_file is None:
-            priority_rules_file = config_dir / "priority_rules.yaml"
-        self.semantic_extractor = SemanticExtractor(semantic_rules_file)
+        self.semantic_extractor = SemanticExtractor(semantic_rules_file or config_dir / "semantic_rules.yaml")
         self.novelty_engine = NoveltyEngine()
-        self.materiality_engine = MaterialityEngine(materiality_rules_file)
-        self.transmission_engine = TransmissionEngine(exposure_rules_file, issuer_metadata_file)
-        self.contradiction_engine = ContradictionEngine(contradiction_rules_file)
-        self.market_confirmation_engine = MarketConfirmationEngine(market_confirmation_rules_file)
-        self.priority_engine = PriorityEngine(priority_rules_file)
+        self.materiality_engine = MaterialityEngine(materiality_rules_file or config_dir / "materiality_rules.yaml")
+        self.transmission_engine = TransmissionEngine(exposure_rules_file or config_dir / "exposure_rules.yaml", issuer_metadata_file)
+        self.contradiction_engine = ContradictionEngine(contradiction_rules_file or config_dir / "contradiction_rules.yaml")
+        self.market_confirmation_engine = MarketConfirmationEngine(market_confirmation_rules_file or config_dir / "market_confirmation_rules.yaml")
+        self.priority_engine = PriorityEngine(priority_rules_file or config_dir / "priority_rules.yaml")
 
     def acquire(self, feeds: list[dict], since: datetime | None = None) -> list[RawObservation]:
         observations: list[RawObservation] = []
         for feed in feeds:
             if not feed.get("enabled") or feed.get("mode") == "catalogue":
                 continue
-            observations.extend(
-                self.acquirer.fetch(
-                    provider_id=feed["provider_id"],
-                    publisher=feed["publisher"],
-                    url=feed["url"],
-                    source_tier=int(feed["tier"]),
-                    since=since,
-                )
-            )
+            observations.extend(self.acquirer.fetch(provider_id=feed["provider_id"], publisher=feed["publisher"], url=feed["url"], source_tier=int(feed["tier"]), since=since))
         return [normalized_observation(item) for item in observations]
 
-    def build_stories(
-        self,
-        observations: list[RawObservation],
-        historical_events: tuple[SemanticEvent, ...] = (),
-        *,
-        as_of: datetime | None = None,
-    ) -> list[StoryIntelligence]:
+    def build_stories(self, observations: list[RawObservation], historical_events: tuple[SemanticEvent, ...] = (), *, as_of: datetime | None = None) -> list[StoryIntelligence]:
         decisions = deduplicate(observations)
         unique = [decision.observation for decision in decisions if decision.duplicate_of is None]
-        stories = cluster_stories(unique)
-        intelligence = [self._intelligence(story) for story in stories]
+        intelligence = [self._intelligence(story) for story in cluster_stories(unique)]
+        return self.build_novelty_and_contradiction(intelligence, historical_events, as_of=as_of)
+
+    def build_novelty_and_contradiction(self, intelligence: list[StoryIntelligence], historical_events: tuple[SemanticEvent, ...], *, as_of: datetime | None = None) -> list[StoryIntelligence]:
         if not historical_events:
             return intelligence
-
-        assessed: list[StoryIntelligence] = []
+        result: list[StoryIntelligence] = []
         for item in intelligence:
-            updated_events: list[SemanticEvent] = []
+            events: list[SemanticEvent] = []
             contradictions: list[ContradictionAssessment] = []
             for event in item.semantic_events:
                 novelty = self.novelty_engine.assess(event, historical_events, as_of=as_of)
                 contradiction = self.contradiction_engine.assess(event, historical_events)
                 contradictions.append(contradiction)
-                updated_events.append(
-                    replace(
-                        event,
-                        novelty_status=novelty.status,
-                        novelty_score=novelty.score,
-                        novelty_reason=novelty.reason,
-                        contradiction_status=contradiction.status,
-                        narrative_state=contradiction.narrative_state,
-                        contradiction_score=contradiction.similarity,
-                        contradiction_reason=contradiction.reason,
-                    )
-                )
-            assessed.append(
-                replace(
-                    item,
-                    semantic_events=tuple(updated_events),
-                    contradictions=tuple(contradictions),
-                )
-            )
-        return assessed
+                events.append(replace(event, novelty_status=novelty.status, novelty_score=novelty.score, novelty_reason=novelty.reason, contradiction_status=contradiction.status, narrative_state=contradiction.narrative_state, contradiction_score=contradiction.similarity, contradiction_reason=contradiction.reason))
+            result.append(replace(item, semantic_events=tuple(events), contradictions=tuple(contradictions)))
+        return result
 
     def build_materiality(self, intelligence: list[StoryIntelligence]) -> list[StoryIntelligence]:
-        result: list[StoryIntelligence] = []
+        result = []
         for item in intelligence:
             events = []
             for event in item.semantic_events:
                 assessment = self.materiality_engine.assess(event)
-                events.append(
-                    replace(
-                        event,
-                        materiality_status=assessment.status,
-                        materiality_score=assessment.score,
-                        materiality_reason=assessment.reason,
-                    )
-                )
+                events.append(replace(event, materiality_status=assessment.status, materiality_score=assessment.score, materiality_reason=assessment.reason))
             result.append(replace(item, semantic_events=tuple(events)))
         return result
 
     def build_transmission(self, intelligence: list[StoryIntelligence]) -> list[StoryIntelligence]:
-        result: list[StoryIntelligence] = []
-        for item in intelligence:
-            transmissions = self.transmission_engine.assess_many(item.semantic_events)
-            result.append(replace(item, transmissions=transmissions))
-        return result
+        return [replace(item, transmissions=self.transmission_engine.assess_many(item.semantic_events)) for item in intelligence]
 
-    def build_contradiction(
-        self,
-        intelligence: list[StoryIntelligence],
-        historical_events: tuple[SemanticEvent, ...],
-    ) -> list[StoryIntelligence]:
-        result: list[StoryIntelligence] = []
-        for item in intelligence:
-            assessments = self.contradiction_engine.assess_many(item.semantic_events, historical_events)
-            events = [
-                replace(
-                    event,
-                    contradiction_status=assessment.status,
-                    narrative_state=assessment.narrative_state,
-                    contradiction_score=assessment.similarity,
-                    contradiction_reason=assessment.reason,
-                )
-                for event, assessment in zip(item.semantic_events, assessments)
-            ]
-            result.append(replace(item, semantic_events=tuple(events), contradictions=assessments))
-        return result
+    def build_contradiction(self, intelligence: list[StoryIntelligence], historical_events: tuple[SemanticEvent, ...]) -> list[StoryIntelligence]:
+        return self.build_novelty_and_contradiction(intelligence, historical_events)
 
-    def build_market_confirmation(
-        self,
-        intelligence: list[StoryIntelligence],
-        market_observations: Iterable[MarketObservation],
-    ) -> list[StoryIntelligence]:
-        """Attach synchronized market reaction without inventing missing observations."""
+    def build_market_confirmation(self, intelligence: list[StoryIntelligence], market_observations: Iterable[MarketObservation]) -> list[StoryIntelligence]:
         observations = tuple(market_observations)
-        result: list[StoryIntelligence] = []
+        result = []
         for item in intelligence:
             assessments = self.market_confirmation_engine.assess_many(item.semantic_events, observations)
-            events = [
-                replace(
-                    event,
-                    market_confirmation_status=assessment.status,
-                    market_confirmation_score=assessment.score,
-                    market_confirmation_reason=assessment.reason,
-                )
-                for event, assessment in zip(item.semantic_events, assessments)
-            ]
-            result.append(
-                replace(
-                    item,
-                    semantic_events=tuple(events),
-                    market_confirmations=assessments,
-                )
-            )
+            events = [replace(event, market_confirmation_status=assessment.status, market_confirmation_score=assessment.score, market_confirmation_reason=assessment.reason) for event, assessment in zip(item.semantic_events, assessments)]
+            result.append(replace(item, semantic_events=tuple(events), market_confirmations=assessments))
         return result
 
     def build_prioritization(self, intelligence: list[StoryIntelligence]) -> list[StoryIntelligence]:
-        result: list[StoryIntelligence] = []
-        for item in intelligence:
-            priorities = self.priority_engine.assess_many(
-                item.semantic_events,
-                item.evidence,
-                item.transmissions,
-            )
-            result.append(replace(item, priorities=priorities))
-        return result
+        return [replace(item, priorities=self.priority_engine.assess_many(item.semantic_events, item.evidence, item.transmissions)) for item in intelligence]
 
     def rank_prioritization(self, intelligence: list[StoryIntelligence]) -> list[PriorityAssessment]:
-        assessments = [
-            priority
-            for item in intelligence
-            for priority in item.priorities
-        ]
-        return self.priority_engine.rank(assessments)
+        return self.priority_engine.rank(priority for item in intelligence for priority in item.priorities)
 
     def _intelligence(self, story: StoryCluster) -> StoryIntelligence:
         text = " ".join(f"{item.title} {item.summary}" for item in story.observations)
@@ -226,15 +114,40 @@ class StoryEngine:
         evidence = assess_evidence(list(story.observations))
         base = StoryIntelligence(story=story, entities=matches, evidence=evidence)
         events = tuple(self.semantic_extractor.extract(base))
-        transmissions = self.transmission_engine.assess_many(events)
-        return StoryIntelligence(
-            story=story,
-            entities=matches,
-            evidence=evidence,
-            semantic_events=events,
-            transmissions=transmissions,
-        )
+        return StoryIntelligence(story=story, entities=matches, evidence=evidence, semantic_events=events)
 
     @staticmethod
     def now() -> datetime:
         return datetime.now(timezone.utc)
+
+    @staticmethod
+    def load_history(path: str | Path, *, max_events: int = 2000) -> tuple[SemanticEvent, ...]:
+        path = Path(path)
+        if not path.exists():
+            return ()
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return tuple(SemanticEvent(**item) for item in payload.get("events", [])[-max_events:])
+        except (OSError, ValueError, TypeError, KeyError):
+            return ()
+
+    @staticmethod
+    def save_history(path: str | Path, events: Iterable[SemanticEvent], *, max_events: int = 2000) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        selected = list(events)[-max_events:]
+        path.write_text(json.dumps({"version": "1.0", "events": [StoryEngine._jsonable(event) for event in selected]}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+    @staticmethod
+    def _jsonable(value):
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, tuple):
+            return [StoryEngine._jsonable(item) for item in value]
+        if isinstance(value, list):
+            return [StoryEngine._jsonable(item) for item in value]
+        if isinstance(value, dict):
+            return {str(k): StoryEngine._jsonable(v) for k, v in value.items()}
+        if hasattr(value, "__dataclass_fields__"):
+            return {name: StoryEngine._jsonable(getattr(value, name)) for name in value.__dataclass_fields__}
+        return value
