@@ -6,7 +6,7 @@ event_rules:
     triggers: [results, earnings, revenue, profit, ebitda, eps, guidance, outlook]
   order:
     base_confidence: 0.84
-    triggers: ["order win", "order book", contract, "purchase order", awarded, award]
+    triggers: ["order win", "wins order", "order book", contract, "purchase order", awarded, award]
   capital_action:
     base_confidence: 0.90
     triggers: [buyback, dividend, "bonus issue", "stock split", "rights issue", "preferential issue", "fund raise"]
