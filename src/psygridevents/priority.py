@@ -28,7 +28,7 @@ class PriorityEngine:
 
     Missing factors are excluded from the weighted mean rather than fabricated
     as zero. Coverage records how much of the configured scoring model was
-    actually observed.
+    actually observed. Non-asserted events are never actionable.
     """
 
     FACTORS = (
@@ -53,18 +53,9 @@ class PriorityEngine:
             raise ValueError("Priority weights must sum to a positive value.")
         self.weights = {name: value / total for name, value in self.weights.items()}
 
-        self.source_confidence_by_tier = {
-            int(name): float(value)
-            for name, value in (data.get("source_confidence_by_tier") or {}).items()
-        }
-        self.market_relevance_by_type = {
-            str(name): float(value)
-            for name, value in (data.get("market_relevance_by_event_type") or {}).items()
-        }
-        self.persistence_by_horizon = {
-            str(name): float(value)
-            for name, value in (data.get("persistence_by_horizon") or {}).items()
-        }
+        self.source_confidence_by_tier = {int(name): float(value) for name, value in (data.get("source_confidence_by_tier") or {}).items()}
+        self.market_relevance_by_type = {str(name): float(value) for name, value in (data.get("market_relevance_by_event_type") or {}).items()}
+        self.persistence_by_horizon = {str(name): float(value) for name, value in (data.get("persistence_by_horizon") or {}).items()}
         classes = data.get("classes") or {}
         self.class_thresholds = {
             "critical": float(classes.get("critical", 85.0)),
@@ -75,40 +66,39 @@ class PriorityEngine:
         self.minimum_coverage_for_critical = float(data.get("minimum_coverage_for_critical", 0.90))
         self.minimum_coverage_for_high = float(data.get("minimum_coverage_for_high", 0.75))
 
-    def assess(
-        self,
-        event: SemanticEvent,
-        evidence: EvidenceAssessment,
-        transmission: TransmissionAssessment | None = None,
-    ) -> PriorityAssessment:
-        components: dict[str, float] = {}
+    def assess(self, event: SemanticEvent, evidence: EvidenceAssessment, transmission: TransmissionAssessment | None = None) -> PriorityAssessment:
+        if event.negated or event.modality != "asserted":
+            return PriorityAssessment(
+                event_id=event.event_id,
+                priority_score=0.0,
+                priority_class="informational",
+                coverage=0.0,
+                component_scores={},
+                available_factors=(),
+                missing_factors=self.FACTORS,
+                reason=f"Non-asserted event ({event.modality}) is informational and not actionable; priority factors are not scored.",
+            )
 
+        components: dict[str, float] = {}
         source = self._source_confidence(evidence)
         if source is not None:
             components["source_confidence"] = source
-
         if event.novelty_status not in {"", "unknown", "not_assessed"}:
             components["novelty"] = self._bounded(event.novelty_score)
-
         surprise = self._surprise_score(event.surprise_status)
         if surprise is not None:
             components["surprise"] = surprise
-
         if event.materiality_status not in {"", "unknown", "not_assessed"}:
             components["financial_materiality"] = self._bounded(event.materiality_score)
-
         exposure = self._exposure_score(transmission)
         if exposure is not None:
             components["exposure"] = exposure
-
         market_relevance = self.market_relevance_by_type.get(event.event_type)
         if market_relevance is not None:
             components["market_relevance"] = self._bounded(market_relevance)
-
         persistence = self.persistence_by_horizon.get(event.time_horizon or "unknown")
         if persistence is not None and (event.time_horizon or "") != "unknown":
             components["persistence"] = self._bounded(persistence)
-
         if transmission is not None and transmission.status not in {"", "unknown", "unlinked", "blocked"}:
             components["transmission"] = self._bounded(transmission.confidence)
 
@@ -119,17 +109,10 @@ class PriorityEngine:
             score = 0.0
             coverage = 0.0
         else:
-            score = 100.0 * sum(
-                components[factor] * self.weights[factor] for factor in available
-            ) / available_weight
+            score = 100.0 * sum(components[factor] * self.weights[factor] for factor in available) / available_weight
             coverage = available_weight
-
         priority_class = self._classify(score, coverage)
-        reason = (
-            f"{len(available)}/{len(self.FACTORS)} priority factors available "
-            f"({coverage:.0%} model coverage); missing: "
-            f"{', '.join(missing) if missing else 'none'}."
-        )
+        reason = f"{len(available)}/{len(self.FACTORS)} priority factors available ({coverage:.0%} model coverage); missing: {', '.join(missing) if missing else 'none'}."
         return PriorityAssessment(
             event_id=event.event_id,
             priority_score=round(score, 2),
@@ -141,24 +124,12 @@ class PriorityEngine:
             reason=reason,
         )
 
-    def assess_many(
-        self,
-        events: Iterable[SemanticEvent],
-        evidence: EvidenceAssessment,
-        transmissions: Iterable[TransmissionAssessment] = (),
-    ) -> tuple[PriorityAssessment, ...]:
+    def assess_many(self, events: Iterable[SemanticEvent], evidence: EvidenceAssessment, transmissions: Iterable[TransmissionAssessment] = ()) -> tuple[PriorityAssessment, ...]:
         transmission_by_id = {item.event_id: item for item in transmissions}
-        return tuple(
-            self.assess(event, evidence, transmission_by_id.get(event.event_id))
-            for event in events
-        )
+        return tuple(self.assess(event, evidence, transmission_by_id.get(event.event_id)) for event in events)
 
     def rank(self, assessments: Iterable[PriorityAssessment]) -> list[PriorityAssessment]:
-        return sorted(
-            assessments,
-            key=lambda item: (item.priority_score, item.coverage, item.event_id),
-            reverse=True,
-        )
+        return sorted(assessments, key=lambda item: (item.priority_score, item.coverage, item.event_id), reverse=True)
 
     def _classify(self, score: float, coverage: float) -> str:
         if score >= self.class_thresholds["critical"] and coverage >= self.minimum_coverage_for_critical:

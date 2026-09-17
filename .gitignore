@@ -14,3 +14,4 @@ htmlcov/
 *.log
 data/raw/
 data/cache/
+data/state/
