@@ -1,0 +1,58 @@
+# CP6 — explainable intelligence prioritization rules.
+# Scores are prioritization heuristics, not probabilities or trading signals.
+
+weights:
+  source_confidence: 0.16
+  novelty: 0.12
+  surprise: 0.12
+  financial_materiality: 0.18
+  exposure: 0.14
+  market_relevance: 0.12
+  persistence: 0.06
+  transmission: 0.10
+
+# Tier 0 is first-party truth. Higher numeric tiers are less authoritative.
+source_confidence_by_tier:
+  0: 1.00
+  1: 0.90
+  2: 0.80
+  3: 0.65
+  4: 0.45
+  5: 0.25
+
+# Configured baseline relevance by canonical event type. This is not a
+# prediction of price direction; it expresses how directly the event class
+# can matter to the monitored market.
+market_relevance_by_event_type:
+  corporate: 0.65
+  earnings: 0.95
+  order: 0.90
+  regulatory: 0.85
+  government_policy: 0.80
+  macro: 0.90
+  central_bank: 0.95
+  commodity: 0.80
+  geopolitical: 0.85
+  legal: 0.75
+  rating: 0.85
+  m_and_a: 0.95
+  capital_action: 0.90
+  management: 0.70
+  operational: 0.80
+  other: 0.50
+
+persistence_by_horizon:
+  immediate: 0.90
+  intraday: 0.85
+  multi_day: 0.70
+  long_term: 0.55
+  unknown: 0.40
+
+classes:
+  critical: 85
+  high: 70
+  medium: 50
+  low: 30
+
+minimum_coverage_for_critical: 0.90
+minimum_coverage_for_high: 0.75
