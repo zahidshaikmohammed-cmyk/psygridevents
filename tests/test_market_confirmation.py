@@ -62,8 +62,15 @@ def test_aligned_price_and_independent_dimensions_confirm() -> None:
 
 def test_opposite_price_reaction_is_contradicted() -> None:
     engine = MarketConfirmationEngine(RULES)
-    assessment = engine.assess(event("negative", effect="revenue decrease"), (obs(-1, 100), obs(5, 98.8)))
+    assessment = engine.assess(event("negative", effect="revenue decrease"), (obs(-1, 100), obs(5, 101.2)))
     assert assessment.status == "contradicted"
+    assert assessment.expected_direction == "negative"
+
+
+def test_aligned_negative_reaction_without_corroboration_remains_mixed() -> None:
+    engine = MarketConfirmationEngine(RULES)
+    assessment = engine.assess(event("negative_aligned", effect="revenue decrease"), (obs(-1, 100), obs(5, 98.8)))
+    assert assessment.status == "mixed"
     assert assessment.expected_direction == "negative"
 
 
