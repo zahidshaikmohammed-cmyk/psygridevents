@@ -17,3 +17,41 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[test]"
       - run: pytest
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      ORACLE_HOST: "140.245.226.102"
+      ORACLE_USER: "ubuntu"
+      ORACLE_APP_DIR: "/home/ubuntu/psygridevents"
+    steps:
+      - name: Configure SSH
+        shell: bash
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$ORACLE_SSH_KEY"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$ORACLE_SSH_KEY" > "$HOME/.ssh/oracle_key"
+          chmod 600 "$HOME/.ssh/oracle_key"
+          ssh-keyscan -H "$ORACLE_HOST" >> "$HOME/.ssh/known_hosts"
+
+      - name: Deploy tested commit to Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/oracle_key" -o BatchMode=yes "$ORACLE_USER@$ORACLE_HOST" \
+            "ORACLE_APP_DIR='$ORACLE_APP_DIR' bash -s" <<'REMOTE'
+          set -euo pipefail
+          if [ ! -d "$ORACLE_APP_DIR/.git" ]; then
+            mkdir -p "$(dirname "$ORACLE_APP_DIR")"
+            git clone --branch main --single-branch https://github.com/zahidshaikmohammed-cmyk/psygridevents.git "$ORACLE_APP_DIR"
+          fi
+          cd "$ORACLE_APP_DIR"
+          git fetch origin main
+          git checkout -B main origin/main
+          git reset --hard origin/main
+          REMOTE
