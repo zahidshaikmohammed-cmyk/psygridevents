@@ -1,0 +1,36 @@
+version: "1.0.0"
+
+# Source URLs are configuration, not hard-coded business logic.
+# Keep the canonical universe in config/instruments.json untouched.
+sources:
+  nse_securities_available:
+    publisher: "NSE"
+    tier: 0
+    purpose: "symbol/company/ISIN/security-code/series verification"
+    official_page: "https://www.nseindia.com/static/market-data/securities-available-for-trading"
+    required_fields: [symbol, company_name, isin]
+  nse_company_name_changes:
+    publisher: "NSE"
+    tier: 0
+    purpose: "historical issuer-name alias resolution"
+    official_page: "https://www.nseindia.com/static/market-data/securities-available-for-trading"
+    required_fields: [symbol]
+  nse_symbol_changes:
+    publisher: "NSE"
+    tier: 0
+    purpose: "historical symbol alias resolution"
+    official_page: "https://www.nseindia.com/static/market-data/securities-available-for-trading"
+    required_fields: [symbol]
+  nse_industry_classification:
+    publisher: "NSE Indices"
+    tier: 0
+    purpose: "macro-sector/sector/industry/basic-industry classification"
+    official_page: "https://www.nseindia.com/static/products-services/industry-classification"
+    required_fields: [symbol, sector, industry, basic_industry]
+
+policy:
+  universe_authority: "config/instruments.json"
+  missing_identifier_action: "retain_null_and_flag"
+  guessed_identifier_action: "forbidden"
+  guessed_sector_action: "forbidden"
+  source_priority: [nse_securities_available, nse_company_name_changes, nse_symbol_changes, nse_industry_classification]
