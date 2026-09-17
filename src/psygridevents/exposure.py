@@ -65,7 +65,8 @@ class ExposureGraph:
             sectors = metadata.get("sectors", [])
             for sector in sectors:
                 for channel in self.event_channels.get(event.event_type, []):
-                    if channel.get("sector") != sector:
+                    configured_sector = channel.get("sector")
+                    if configured_sector not in {sector, "all"}:
                         continue
                     links.append(
                         ExposureLink(
