@@ -26,9 +26,9 @@ class PriorityAssessment:
 class PriorityEngine:
     """Create an auditable priority score from available event evidence.
 
-    Missing factors are excluded from the weighted mean rather than fabricated
-    as zero. Coverage records how much of the configured scoring model was
-    actually observed.
+    Missing or explicitly unknown factors are excluded from the weighted mean
+    rather than fabricated as zero. Coverage records how much of the configured
+    scoring model was actually observed.
     """
 
     FACTORS = (
@@ -64,6 +64,7 @@ class PriorityEngine:
         self.persistence_by_horizon = {
             str(name): float(value)
             for name, value in (data.get("persistence_by_horizon") or {}).items()
+            if str(name) != "unknown"
         }
         classes = data.get("classes") or {}
         self.class_thresholds = {
@@ -105,9 +106,11 @@ class PriorityEngine:
         if market_relevance is not None:
             components["market_relevance"] = self._bounded(market_relevance)
 
-        persistence = self.persistence_by_horizon.get(event.time_horizon or "unknown")
-        if persistence is not None:
-            components["persistence"] = self._bounded(persistence)
+        horizon = event.time_horizon
+        if horizon not in {None, "", "unknown"}:
+            persistence = self.persistence_by_horizon.get(horizon)
+            if persistence is not None:
+                components["persistence"] = self._bounded(persistence)
 
         if transmission is not None and transmission.status not in {"", "unknown", "unlinked", "blocked"}:
             components["transmission"] = self._bounded(transmission.confidence)
