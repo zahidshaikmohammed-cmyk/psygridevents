@@ -61,6 +61,10 @@ class SemanticEvent:
     materiality_status: str = "not_assessed"
     materiality_score: float = 0.0
     materiality_reason: str | None = None
+    contradiction_status: str = "not_assessed"
+    narrative_state: str = "unresolved"
+    contradiction_score: float = 0.0
+    contradiction_reason: str | None = None
 
 
 class SemanticExtractor:
