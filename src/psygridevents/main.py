@@ -24,7 +24,7 @@ def main() -> None:
     parser.add_argument(
         "--once",
         action="store_true",
-        help="Acquire currently enabled verified feeds once and print story diagnostics.",
+        help="Acquire currently enabled verified feeds once and print semantic diagnostics.",
     )
     args = parser.parse_args()
 
@@ -37,8 +37,8 @@ def main() -> None:
     print(f"Concrete provider adapters ready: {len(adapters)}")
 
     if not args.once:
-        print("Ingestion boundary: source facts only; no interpretation is performed.")
-        print("Run with --once to execute the verified first-party acquisition pipeline.")
+        print("Ingestion boundary: verified source facts only; semantic interpretation remains provenance-linked.")
+        print("Run with --once to execute acquisition, story clustering, and semantic event extraction.")
         return
 
     feeds = _load_feeds()
@@ -46,13 +46,27 @@ def main() -> None:
     observations = engine.acquire(feeds)
     stories = engine.build_stories(observations)
 
+    event_count = sum(len(item.semantic_events) for item in stories)
     print(f"Raw observations: {len(observations)}")
     print(f"Unique stories: {len(stories)}")
+    print(f"Semantic event candidates: {event_count}")
+
     for item in stories[:20]:
         symbols = sorted({match.instrument for match in item.entities})
         print("-", item.story.representative.title)
         print("  sources:", len(item.story.observations), "state:", item.evidence.corroboration_state)
         print("  instruments:", ", ".join(symbols) if symbols else "unresolved")
+        for event in item.semantic_events:
+            magnitude = event.magnitude.text if event.magnitude else "unquantified"
+            print(
+                "  event:",
+                event.event_type,
+                "trigger=", event.trigger,
+                "magnitude=", magnitude,
+                "confidence=", event.extraction_confidence,
+                "novelty=", event.novelty_status,
+                "surprise=", event.surprise_status,
+            )
 
 
 if __name__ == "__main__":
