@@ -77,6 +77,7 @@ class SemanticExtractor:
         data = yaml.safe_load(Path(rules_file).read_text(encoding="utf-8")) or {}
         self.rules: dict[str, Any] = data.get("event_rules", {})
         self.negation_patterns = tuple(data.get("negation_patterns", []))
+        self.negation_exclusions = tuple(data.get("negation_exclusions", []))
         self.modality_patterns = data.get("modality_patterns", {})
         self.horizon_patterns = data.get("horizon_patterns", {})
         self.effect_patterns = data.get("effect_patterns", {})
@@ -96,7 +97,7 @@ class SemanticExtractor:
         sentence = self._sentence_around(text, trigger_position)
         negated = self._is_negated(sentence, trigger)
         modality = self._modality(sentence)
-        if negated and modality == "asserted":
+        if negated:
             modality = "negated"
         matched_entities = tuple(sorted({match.instrument for match in intelligence.entities}))
         participants = tuple(sorted({match.alias for match in intelligence.entities}))
@@ -136,7 +137,13 @@ class SemanticExtractor:
         if position < 0:
             return False
         context = sentence[max(0, position - 120):]
-        return any(re.search(pattern, context, re.I) for pattern in self.negation_patterns)
+        for pattern in self.negation_patterns:
+            for match in re.finditer(pattern, context, re.I):
+                token_context = context[max(0, match.start() - 80):match.end() + 80]
+                if any(re.search(exclusion, token_context, re.I) for exclusion in self.negation_exclusions):
+                    continue
+                return True
+        return False
 
     @staticmethod
     def _document_text(observation: RawObservation) -> str:
