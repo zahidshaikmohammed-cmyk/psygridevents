@@ -1,0 +1,60 @@
+version: "1.0.0"
+
+# Canonical event ontology. Keywords are discovery aids only; they are never
+# sufficient evidence for assigning an event type or market impact.
+event_types:
+  earnings:
+    description: "Financial results, earnings releases and quantified guidance."
+    materiality_factors: [earnings_surprise, guidance_change, margin_change, cash_flow, outlook]
+  order:
+    description: "New contracts, purchase orders, awards, wins and cancellations."
+    materiality_factors: [order_value, duration, margin, customer_quality, execution_risk]
+  capital_action:
+    description: "Dividend, buyback, bonus, split, rights, preferential issue or fundraising."
+    materiality_factors: [size, dilution, payout, pricing, ownership_change]
+  merger_acquisition:
+    description: "M&A, stake purchases, divestments, demergers and restructuring."
+    materiality_factors: [transaction_value, control, funding, strategic_fit, regulatory_risk]
+  regulation:
+    description: "SEBI, RBI, sector regulator or other binding regulatory action."
+    materiality_factors: [scope, affected_entities, compliance_cost, effective_date, enforcement]
+  government_policy:
+    description: "Government policy, taxation, tariffs, subsidies, incentives and public spending."
+    materiality_factors: [sector_scope, fiscal_size, effective_date, duration, affected_supply_chain]
+  macro:
+    description: "Inflation, growth, employment, PMI, GDP and other macroeconomic releases."
+    materiality_factors: [actual_vs_expected, revision, persistence, transmission]
+  central_bank:
+    description: "Policy rates, liquidity, guidance and central-bank communications."
+    materiality_factors: [rate_surprise, guidance, liquidity, currency, banking_transmission]
+  commodity:
+    description: "Material moves or supply-demand shocks in commodities."
+    materiality_factors: [magnitude, duration, input_exposure, pass_through, inventory]
+  geopolitical:
+    description: "Wars, sanctions, trade restrictions, diplomatic shocks and supply disruption."
+    materiality_factors: [geographic_exposure, duration, trade_flow, supply_disruption, escalation]
+  legal:
+    description: "Material litigation, investigations, settlements, orders and legal judgments."
+    materiality_factors: [financial_exposure, injunction, precedent, settlement, operational_effect]
+  rating:
+    description: "Credit-rating actions, outlook changes and watchlist events."
+    materiality_factors: [rating_change, outlook, debt_size, refinancing, covenant_effect]
+  management:
+    description: "Management changes, commentary and strategic statements."
+    materiality_factors: [role, strategic_change, credibility, guidance, continuity]
+  operational:
+    description: "Plants, production, outages, capacity, safety, cyber and operational disruption."
+    materiality_factors: [capacity_affected, duration, restart, insurance, customer_impact]
+  corporate:
+    description: "Material corporate disclosures that do not fit a narrower event type."
+    materiality_factors: [financial_materiality, strategic_materiality, persistence]
+
+market_confirmation_states:
+  confirmed:
+    description: "Observed market behaviour is consistent with the current event interpretation."
+  contradicted:
+    description: "Observed market behaviour materially conflicts with the current interpretation."
+  untested:
+    description: "Insufficient synchronized market evidence exists to evaluate the interpretation."
+  mixed:
+    description: "Different affected instruments or horizons show conflicting reactions."
