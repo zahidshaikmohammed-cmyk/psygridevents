@@ -1,0 +1,32 @@
+version: "1.0.0"
+
+# Heuristic weights only. Scores are not probabilities and do not estimate price moves.
+event_weights:
+  earnings: 0.60
+  order: 0.55
+  capital_action: 0.60
+  merger_acquisition: 0.65
+  regulation: 0.55
+  government_policy: 0.55
+  macro: 0.55
+  central_bank: 0.60
+  commodity: 0.50
+  geopolitical: 0.50
+  legal: 0.50
+  rating: 0.55
+  management: 0.45
+  operational: 0.50
+  corporate: 0.40
+
+magnitude_bonus: 0.20
+effect_bonus: 0.15
+novelty_bonus: 0.10
+high_threshold: 0.75
+medium_threshold: 0.45
+
+policy:
+  require_direct_instrument_for_material: true
+  non_asserted_events_cannot_be_high: true
+  second_order_exposure_deferred_to_transmission: true
+  scores_are_probabilities: false
+  price_impact_is_not_estimated: true

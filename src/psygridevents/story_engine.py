@@ -3,14 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
 
 from .acquisition import RSSAcquirer, RawObservation
 from .clustering import StoryCluster, cluster_stories
 from .deduplication import deduplicate
 from .entity_resolution import InstrumentResolver, EntityMatch
 from .evidence import EvidenceAssessment, assess_evidence
-from .issuer_master import IssuerMasterBuilder, IssuerRecord
+from .materiality import MaterialityEngine
 from .normalize import normalized_observation
 from .novelty import NoveltyEngine
 from .semantic import SemanticEvent, SemanticExtractor
@@ -25,27 +24,23 @@ class StoryIntelligence:
 
 
 class StoryEngine:
-    """Acquisition-to-semantic-event pipeline with explicit issuer truth."""
+    """Acquisition-to-semantic-event pipeline with explicit provenance."""
 
     def __init__(
         self,
         instrument_file: str | Path,
         semantic_rules_file: str | Path | None = None,
-        issuer_rows: Iterable[dict[str, str]] | None = None,
+        materiality_rules_file: str | Path | None = None,
     ) -> None:
         self.acquirer = RSSAcquirer()
-        base_resolver = InstrumentResolver.from_instrument_file(instrument_file)
-        self.issuer_records: tuple[IssuerRecord, ...] = ()
-        if issuer_rows is not None:
-            master = IssuerMasterBuilder(instrument_file)
-            self.issuer_records = tuple(master.merge(issuer_rows))
-            self.resolver = InstrumentResolver.from_issuer_records(self.issuer_records, base_resolver)
-        else:
-            self.resolver = base_resolver
+        self.resolver = InstrumentResolver.from_instrument_file(instrument_file)
         if semantic_rules_file is None:
             semantic_rules_file = Path(instrument_file).parent / "semantic_rules.yaml"
+        if materiality_rules_file is None:
+            materiality_rules_file = Path(instrument_file).parent / "materiality_rules.yaml"
         self.semantic_extractor = SemanticExtractor(semantic_rules_file)
         self.novelty_engine = NoveltyEngine()
+        self.materiality_engine = MaterialityEngine(materiality_rules_file)
 
     def acquire(self, feeds: list[dict], since: datetime | None = None) -> list[RawObservation]:
         observations: list[RawObservation] = []
@@ -81,11 +76,7 @@ class StoryEngine:
         for item in intelligence:
             updated_events: list[SemanticEvent] = []
             for event in item.semantic_events:
-                assessment = self.novelty_engine.assess(
-                    event,
-                    historical_events,
-                    as_of=as_of,
-                )
+                assessment = self.novelty_engine.assess(event, historical_events, as_of=as_of)
                 updated_events.append(
                     replace(
                         event,
@@ -97,18 +88,34 @@ class StoryEngine:
             assessed.append(replace(item, semantic_events=tuple(updated_events)))
         return assessed
 
+    def build_materiality(
+        self,
+        intelligence: list[StoryIntelligence],
+    ) -> list[StoryIntelligence]:
+        """Attach evidence-gated materiality to already extracted events."""
+        result: list[StoryIntelligence] = []
+        for item in intelligence:
+            events = []
+            for event in item.semantic_events:
+                assessment = self.materiality_engine.assess(event)
+                events.append(
+                    replace(
+                        event,
+                        materiality_status=assessment.status,
+                        materiality_score=assessment.score,
+                        materiality_reason=assessment.reason,
+                    )
+                )
+            result.append(replace(item, semantic_events=tuple(events)))
+        return result
+
     def _intelligence(self, story: StoryCluster) -> StoryIntelligence:
         text = " ".join(f"{item.title} {item.summary}" for item in story.observations)
         matches = tuple(self.resolver.resolve(text))
         evidence = assess_evidence(list(story.observations))
         base = StoryIntelligence(story=story, entities=matches, evidence=evidence)
         events = tuple(self.semantic_extractor.extract(base))
-        return StoryIntelligence(
-            story=story,
-            entities=matches,
-            evidence=evidence,
-            semantic_events=events,
-        )
+        return StoryIntelligence(story=story, entities=matches, evidence=evidence, semantic_events=events)
 
     @staticmethod
     def now() -> datetime:
