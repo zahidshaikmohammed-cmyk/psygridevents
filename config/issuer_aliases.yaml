@@ -1,0 +1,5 @@
+version: "1.0.0"
+
+# Populated only from verified exchange/company-name and symbol-change records.
+# Empty by design until the official source files are ingested.
+issuers: {}
