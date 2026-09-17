@@ -24,12 +24,7 @@ class IssuerRecord:
 
 
 class IssuerMasterBuilder:
-    """Build a verified identifier/sector layer without altering the supplied universe.
-
-    Official NSE/NSE Indices data is the preferred source. Missing fields remain
-    null rather than being guessed. A row is trusted only when it explicitly
-    carries the symbol and the caller marks the source record as verified.
-    """
+    """Build a verified identifier/sector layer without altering the supplied universe."""
 
     def __init__(self, universe_file: str | Path) -> None:
         self.universe = self._load_universe(universe_file)
@@ -40,6 +35,13 @@ class IssuerMasterBuilder:
 
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
         return tuple(payload.get("instruments", []))
+
+    @staticmethod
+    def _verified(row: dict[str, str]) -> bool:
+        value = row.get("verified")
+        if value is None:
+            return True
+        return str(value).strip().lower() in {"1", "true", "yes", "verified"}
 
     def merge(self, rows: Iterable[dict[str, str]]) -> list[IssuerRecord]:
         by_symbol = {row.get("symbol", "").strip().upper(): row for row in rows if row.get("symbol")}
@@ -57,7 +59,7 @@ class IssuerMasterBuilder:
                     industry=row.get("industry") or None,
                     basic_industry=row.get("basic_industry") or row.get("basic industry") or None,
                     source=row.get("source", "nse_official") if row else "nse_official",
-                    verified=bool(row.get("verified", True)) if row else False,
+                    verified=self._verified(row) if row else False,
                 )
             )
         return records
