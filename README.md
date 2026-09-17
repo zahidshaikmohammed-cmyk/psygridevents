@@ -23,7 +23,7 @@ Its job is not to collect headlines and attach a generic sentiment label. It is 
 
 **FACT → EVENT → EXPOSURE → MECHANISM → IMPACT → CONTEXT → CONFIRMATION → INTELLIGENCE**
 
-The engine is intentionally hybrid. Deterministic Python handles ingestion, normalization, validation, deduplication, clustering, entity resolution, scoring and data contracts. An optional reasoning layer can enrich events with semantic interpretation without becoming the source of truth for infrastructure.
+The engine is intentionally hybrid. Deterministic Python handles ingestion, normalization, validation, deduplication, clustering, entity resolution, semantic extraction, exposure mapping and data contracts. A future reasoning layer can enrich events with semantic interpretation without becoming the source of truth for infrastructure.
 
 ## Precision principles
 
@@ -40,6 +40,9 @@ The engine is intentionally hybrid. Deterministic Python handles ingestion, norm
 - Every material conclusion must retain an evidence trail.
 - Multiple articles from one publisher do not count as independent corroboration.
 - Undocumented or guessed feed URLs are never activated.
+- Semantic extraction records what the source states; it does not invent surprise, direction or materiality.
+- Hypothetical, planned, reported and negated language is retained explicitly.
+- Second-order exposure is fail-closed unless the issuer/sector relationship is explicitly configured.
 
 ## Provider architecture
 
@@ -68,7 +71,7 @@ Provider research and activation policy live in `docs/PROVIDER_RESEARCH.md`, `co
 
 The repository monitors the supplied 450-instrument universe. The canonical symbols live in `config/instruments.json` and are treated as configuration/data, not scattered constants.
 
-## Current acquisition-to-story pipeline
+## Acquisition → semantic event pipeline
 
 ```text
 Verified source feed
@@ -85,16 +88,51 @@ Evolving story clustering
       ↓
 Evidence / corroboration assessment
       ↓
-[Next] semantic event extraction
+Canonical event taxonomy
       ↓
-[Next] exposure graph
+Semantic event extraction
       ↓
-[Next] impact + surprise + contradiction engines
+Explicit exposure graph
       ↓
-[Next] market confirmation
+[Next] novelty + surprise + materiality
       ↓
-Intelligence feed
+[Next] contradiction / narrative state
+      ↓
+[Next] synchronized market confirmation
+      ↓
+Ranked intelligence feed
 ```
+
+### Semantic event contract
+
+Every extracted event is structured around:
+
+```text
+WHAT HAPPENED
+WHO / INSTRUMENTS
+EVENT TYPE
+TRIGGER
+MAGNITUDE
+DIRECT EFFECT
+INDIRECT EFFECT
+COMPETITOR EFFECT
+SUPPLY-CHAIN EFFECT
+TIME HORIZON
+MODALITY / NEGATION
+NOVELTY STATUS
+SURPRISE STATUS
+EVIDENCE
+UNCERTAINTY
+MARKET MECHANISM
+```
+
+The current implementation deliberately leaves `novelty_status`, `surprise_status` and `market_mechanism` as unassessed/null until their dedicated engines have historical baselines and synchronized market data. This prevents the semantic layer from smuggling an unsupported trading conclusion into the event record.
+
+### Exposure contract
+
+Direct exposure can be emitted when an event explicitly resolves to a configured instrument. Sector and second-order links require an explicit issuer/sector relationship graph. Generic intuition is not converted into a graph edge automatically.
+
+## Running
 
 Run the package normally for diagnostics:
 
@@ -108,10 +146,12 @@ Run the currently enabled verified first-party feeds once:
 python -m psygridevents.main --once
 ```
 
+The one-shot CLI now reports raw observations, story count, semantic event candidates, resolved instruments, extraction confidence, magnitude, novelty and surprise state.
+
 No API keys are stored in the repository. Licensed providers remain disabled until credentials and entitlements are supplied.
 
 ## Status
 
-**Phase 1 — Source + story foundation implemented.** Provider research, verified-feed configuration, raw RSS acquisition, normalization, deduplication, story clustering, conservative 450-instrument entity resolution, provenance assessment, tests and one-shot CLI diagnostics are now in the repository.
+**Phase 2 — Semantic event foundation implemented.** Provider research, verified-feed configuration, raw acquisition, normalization, deduplication, story clustering, conservative 450-instrument entity resolution, evidence assessment, canonical semantic event extraction, explicit exposure mapping, regression tests and one-shot diagnostics are now in the repository.
 
-Next: **semantic event extraction + company/sector relationship graph + exposure intelligence.**
+Next: **verified issuer/sector master → novelty/surprise/materiality engines → contradiction state → synchronized market confirmation.**
