@@ -1,0 +1,22 @@
+version: "1.0.0"
+
+# These patterns classify only documented effect polarity. They are not sentiment.
+positive_patterns:
+  - "\\b(increase|increased|rises|rose|higher|gain|gains|wins|awarded|approved|growth|expansion)\\b"
+  - "\\b(order win|contract win|profit up|revenue up|margin up)\\b"
+
+negative_patterns:
+  - "\\b(decrease|decreased|falls|fell|lower|loss|losses|cancelled|rejected|decline|declined|cut|cuts|shutdown)\\b"
+  - "\\b(order loss|contract loss|profit down|revenue down|margin down)\\b"
+
+# Similarity is an event-relationship threshold, not a probability.
+related_similarity: 0.35
+min_similarity: 0.50
+
+policy:
+  compare_structured_events_only: true
+  market_price_action_is_not_a_contradiction: true
+  headline_rewording_is_not_a_contradiction: true
+  neutral_polarity_does_not_create_conflict: true
+  non_asserted_events_excluded: true
+  scores_are_probabilities: false
