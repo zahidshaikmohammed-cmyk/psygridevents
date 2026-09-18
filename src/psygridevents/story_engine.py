@@ -184,6 +184,24 @@ class StoryEngine:
         selected = list(events)[-max_events:]
         path.write_text(json.dumps({"version": "1.0", "events": [StoryEngine._jsonable(event) for event in selected]}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
+    def build_event_timing(self, intelligence, *, as_of=None):
+        from .event_timing import EventTimingEngine
+        engine = EventTimingEngine()
+        now = as_of or self.now()
+        return [(item, tuple(engine.assess(event, as_of=now) for event in item.semantic_events)) for item in intelligence]
+
+    def build_signals(self, intelligence, market_adapter, *, as_of=None):
+        from .signal import EventSignalEngine
+        now = as_of or self.now()
+        signal_engine = EventSignalEngine()
+        output = []
+        for item in intelligence:
+            timings = self.build_event_timing([item], as_of=now)[0][1]
+            symbols = tuple(symbol for mapping in item.event_mappings for symbol in mapping.assets)
+            observations = market_adapter.observations(symbols, now, now)
+            output.extend(signal_engine.assess_many(item.semantic_events, item.event_mappings, timings, observations, as_of=now))
+        return tuple(output)
+
     @staticmethod
     def _jsonable(value):
         if isinstance(value, datetime):
