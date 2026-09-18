@@ -174,6 +174,6 @@ No API keys are stored in the repository. Licensed providers remain disabled unt
 
 ## Status
 
-**CP7 — Delivery/output contract implemented.** The repository now has the semantic/event foundation, explicit transmission, novelty/materiality/contradiction context, synchronized market confirmation, deterministic eight-factor prioritization, and a versioned production-facing JSON/CLI delivery boundary with regression coverage.
+**CP8–CP10 — Event-driven signal architecture implemented.** The repository now has the semantic/event foundation, explicit transmission, novelty/materiality/contradiction context, synchronized market confirmation, deterministic eight-factor prioritization, and a versioned production-facing JSON/CLI delivery boundary with regression coverage.
 
-Next: production integrations that consume the CP7 contract, followed by historical evaluation and calibration rather than adding opaque scoring layers.
+The delivery contract now includes explicit event-driven signals. CP10 uses a real-market adapter boundary and remains fail-closed when no entitled market-data endpoint is configured. Live validation and calibration require the external market-data entitlement.

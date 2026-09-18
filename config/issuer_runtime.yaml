@@ -1,0 +1,11 @@
+version: "1.0.0"
+source:
+  publisher: "NSE"
+  tier: 0
+  csv_url: "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
+cache_file: "data/state/issuer_master.json"
+max_age_hours: 24
+request_timeout_seconds: 15
+policy:
+  universe_authority: "config/instruments.json"
+  guessed_identifier_action: "forbidden"

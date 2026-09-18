@@ -6,12 +6,16 @@ from pathlib import Path
 from typing import Iterable
 import json
 
+import yaml
+
 from .acquisition import RSSAcquirer, RawObservation
 from .clustering import StoryCluster, cluster_stories
 from .contradiction import ContradictionAssessment, ContradictionEngine
 from .deduplication import deduplicate
 from .entity_resolution import InstrumentResolver, EntityMatch
 from .evidence import EvidenceAssessment, assess_evidence
+from .event_mapping import EventMechanismAssessment, EventMechanismEngine
+from .issuer_runtime import IssuerMasterRuntime
 from .market_confirmation import MarketConfirmationAssessment, MarketConfirmationEngine, MarketObservation
 from .materiality import MaterialityEngine
 from .normalize import normalized_observation
@@ -31,15 +35,34 @@ class StoryIntelligence:
     contradictions: tuple[ContradictionAssessment, ...] = ()
     market_confirmations: tuple[MarketConfirmationAssessment, ...] = ()
     priorities: tuple[PriorityAssessment, ...] = ()
+    event_mappings: tuple[EventMechanismAssessment, ...] = ()
 
 
 class StoryEngine:
     """Acquisition-to-priority pipeline with explicit fail-closed CP stages."""
 
-    def __init__(self, instrument_file: str | Path, semantic_rules_file: str | Path | None = None, materiality_rules_file: str | Path | None = None, exposure_rules_file: str | Path | None = None, issuer_metadata_file: str | Path | None = None, contradiction_rules_file: str | Path | None = None, market_confirmation_rules_file: str | Path | None = None, priority_rules_file: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        instrument_file: str | Path,
+        semantic_rules_file: str | Path | None = None,
+        materiality_rules_file: str | Path | None = None,
+        exposure_rules_file: str | Path | None = None,
+        issuer_metadata_file: str | Path | None = None,
+        contradiction_rules_file: str | Path | None = None,
+        market_confirmation_rules_file: str | Path | None = None,
+        priority_rules_file: str | Path | None = None,
+        event_mapping_rules_file: str | Path | None = None,
+        issuer_runtime_config_file: str | Path | None = None,
+    ) -> None:
         self.acquirer = RSSAcquirer()
         self.resolver = InstrumentResolver.from_instrument_file(instrument_file)
         config_dir = Path(instrument_file).parent
+        if issuer_runtime_config_file:
+            self.resolver = self._resolver_with_runtime_issuer_master(
+                self.resolver,
+                instrument_file,
+                issuer_runtime_config_file,
+            )
         self.semantic_extractor = SemanticExtractor(semantic_rules_file or config_dir / "semantic_rules.yaml")
         self.novelty_engine = NoveltyEngine()
         self.materiality_engine = MaterialityEngine(materiality_rules_file or config_dir / "materiality_rules.yaml")
@@ -47,6 +70,7 @@ class StoryEngine:
         self.contradiction_engine = ContradictionEngine(contradiction_rules_file or config_dir / "contradiction_rules.yaml")
         self.market_confirmation_engine = MarketConfirmationEngine(market_confirmation_rules_file or config_dir / "market_confirmation_rules.yaml")
         self.priority_engine = PriorityEngine(priority_rules_file or config_dir / "priority_rules.yaml")
+        self.event_mechanism_engine = EventMechanismEngine(event_mapping_rules_file or config_dir / "event_mapping_rules.yaml")
 
     def acquire(self, feeds: list[dict], since: datetime | None = None) -> list[RawObservation]:
         observations: list[RawObservation] = []
@@ -90,6 +114,9 @@ class StoryEngine:
     def build_transmission(self, intelligence: list[StoryIntelligence]) -> list[StoryIntelligence]:
         return [replace(item, transmissions=self.transmission_engine.assess_many(item.semantic_events)) for item in intelligence]
 
+    def build_event_mapping(self, intelligence: list[StoryIntelligence]) -> list[StoryIntelligence]:
+        return [replace(item, event_mappings=self.event_mechanism_engine.assess_many(item.semantic_events)) for item in intelligence]
+
     def build_contradiction(self, intelligence: list[StoryIntelligence], historical_events: tuple[SemanticEvent, ...]) -> list[StoryIntelligence]:
         return self.build_novelty_and_contradiction(intelligence, historical_events)
 
@@ -117,6 +144,25 @@ class StoryEngine:
         return StoryIntelligence(story=story, entities=matches, evidence=evidence, semantic_events=events)
 
     @staticmethod
+    def _resolver_with_runtime_issuer_master(base: InstrumentResolver, instrument_file: str | Path, runtime_config_file: str | Path) -> InstrumentResolver:
+        try:
+            config = yaml.safe_load(Path(runtime_config_file).read_text(encoding="utf-8")) or {}
+            source = config.get("source", {})
+            cache_file = Path(config.get("cache_file", "data/state/issuer_master.json"))
+            if not cache_file.is_absolute():
+                cache_file = Path(instrument_file).parent.parent / cache_file
+            runtime = IssuerMasterRuntime(
+                instrument_file,
+                cache_file,
+                str(source["csv_url"]),
+                max_age_hours=float(config.get("max_age_hours", 24)),
+                timeout=float(config.get("request_timeout_seconds", 15)),
+            )
+            return InstrumentResolver.from_issuer_records(runtime.load(), base)
+        except (OSError, KeyError, TypeError, ValueError):
+            return base
+
+    @staticmethod
     def now() -> datetime:
         return datetime.now(timezone.utc)
 
@@ -137,6 +183,25 @@ class StoryEngine:
         path.parent.mkdir(parents=True, exist_ok=True)
         selected = list(events)[-max_events:]
         path.write_text(json.dumps({"version": "1.0", "events": [StoryEngine._jsonable(event) for event in selected]}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+    def build_event_timing(self, intelligence, *, as_of=None):
+        from .event_timing import EventTimingEngine
+        engine = EventTimingEngine()
+        now = as_of or self.now()
+        return [(item, tuple(engine.assess(event, as_of=now) for event in item.semantic_events)) for item in intelligence]
+
+    def build_signals(self, intelligence, market_adapter, *, as_of=None, market_observations=None):
+        from .signal import EventSignalEngine
+        now = as_of or self.now()
+        signal_engine = EventSignalEngine()
+        shared = None if market_observations is None else tuple(market_observations)
+        output = []
+        for item in intelligence:
+            timings = self.build_event_timing([item], as_of=now)[0][1]
+            symbols = tuple(symbol for mapping in item.event_mappings for symbol in mapping.assets)
+            observations = shared if shared is not None else market_adapter.observations(symbols, min((event.event_time for event in item.semantic_events if event.event_time is not None), default=now), now)
+            output.extend(signal_engine.assess_many(item.semantic_events, item.event_mappings, timings, observations, as_of=now))
+        return tuple(output)
 
     @staticmethod
     def _jsonable(value):

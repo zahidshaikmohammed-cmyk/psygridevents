@@ -1,0 +1,42 @@
+version: "1.0.0"
+
+# CP8 maps already-resolved assets to an explicit economic mechanism.
+# Missing or ambiguous direction remains unknown; no inference is fabricated.
+event_types:
+  earnings:
+    mechanism: "earnings_to_expectations"
+  order:
+    mechanism: "order_to_revenue_backlog"
+  capital_action:
+    mechanism: "capital_structure_or_share_supply"
+  merger_acquisition:
+    mechanism: "ownership_synergy_or_competition"
+  regulation:
+    mechanism: "regulatory_scope"
+  government_policy:
+    mechanism: "policy_scope"
+  macro:
+    mechanism: "macro_demand_or_cost"
+  central_bank:
+    mechanism: "financing_conditions"
+  commodity:
+    mechanism: "input_or_output_price"
+  geopolitical:
+    mechanism: "trade_or_supply_exposure"
+  legal:
+    mechanism: "legal_outcome"
+  rating:
+    mechanism: "funding_cost_or_credit_access"
+  management:
+    mechanism: "management_or_governance_change"
+  operational:
+    mechanism: "operational_capacity_or_disruption"
+  corporate:
+    mechanism: "corporate_event"
+  other:
+    mechanism: "unspecified"
+
+positive_patterns:
+  - "\\b(increase|increased|growth|grew|gain|gained|win|wins|won|awarded|award|rise|rises|raised|approval|approved|benefit|beneficial|strong|positive|upside|record)\\b"
+negative_patterns:
+  - "\\b(decrease|decreased|decline|declined|fall|fell|loss|lost|cancelled|canceled|rejected|rejection|penalty|weak|negative|downside|cut|cuts|downgrade|default|disruption)\\b"

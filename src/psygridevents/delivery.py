@@ -5,6 +5,7 @@ from typing import Any, Iterable
 
 from .priority import PriorityAssessment
 from .story_engine import StoryIntelligence
+from .signal import EventDrivenSignal
 
 SCHEMA_VERSION = "1.0"
 
@@ -55,6 +56,7 @@ def build_intelligence_payload(
     ranked: Iterable[PriorityAssessment],
     *,
     generated_at: datetime,
+    signals: Iterable[EventDrivenSignal] = (),
 ) -> dict[str, Any]:
     """Build the stable CP7 machine-readable delivery contract.
 
@@ -83,15 +85,18 @@ def build_intelligence_payload(
             entry["event"] = _jsonable(event)
         ranked_events.append(entry)
 
+    signal_items = tuple(signals)
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": _jsonable(generated_at),
         "engine": "psygridevents",
         "stories": [_story(item) for item in stories],
         "ranked_events": ranked_events,
+        "signals": [_jsonable(signal) for signal in signal_items],
         "summary": {
             "story_count": len(stories),
             "event_count": sum(len(item.semantic_events) for item in stories),
             "ranked_event_count": len(ranked_items),
+            "signal_count": len(signal_items),
         },
     }

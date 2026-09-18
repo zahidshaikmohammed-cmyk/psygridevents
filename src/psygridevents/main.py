@@ -10,6 +10,7 @@ import yaml
 from .catalogue import CatalogueResolutionError, resolve_official_rss_catalogue
 from .delivery import build_intelligence_payload
 from .provider_registry import build_rss_adapters, load_provider_specs
+from .signal_adapter import HttpMarketDataAdapter
 from .story_engine import StoryEngine
 from .universe import load_instruments
 
@@ -93,12 +94,20 @@ def main() -> None:
     stories = engine.build_stories(observations, historical, as_of=engine.now())
     stories = engine.build_materiality(stories)
     stories = engine.build_transmission(stories)
-    stories = engine.build_market_confirmation(stories, ())
+    stories = engine.build_event_mapping(stories)
+    market_adapter = HttpMarketDataAdapter.from_environment()
+    now = engine.now()
+    symbols = tuple(symbol for item in stories for mapping in item.event_mappings for symbol in mapping.assets)
+    event_times = tuple(event.event_time for item in stories for event in item.semantic_events if event.event_time is not None)
+    start = min(event_times, default=now)
+    market_observations = market_adapter.observations(symbols, start, now)
+    stories = engine.build_market_confirmation(stories, market_observations)
+    signals = engine.build_signals(stories, market_adapter, as_of=now, market_observations=market_observations)
     stories = engine.build_prioritization(stories)
     ranked = engine.rank_prioritization(stories)
     current_events = tuple(event for item in stories for event in item.semantic_events)
     engine.save_history(HISTORY_FILE, (*historical, *current_events))
-    payload = build_intelligence_payload(stories, ranked, generated_at=engine.now())
+    payload = build_intelligence_payload(stories, ranked, generated_at=now, signals=signals)
 
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
@@ -109,7 +118,12 @@ def main() -> None:
     print(f"Unique stories: {len(stories)}")
     print(f"Semantic event candidates: {event_count}")
     print(f"Historical semantic events available: {len(historical)}")
-    print("Market confirmation: untested (no live MarketObservation adapter supplied)")
+    print(f"Market observations: {len(market_observations)}")
+    print(f"Event-driven signals: {sum(1 for signal in signals if signal.signal_state.value not in {'NO_SIGNAL', 'WATCH'})}")
+    for signal in signals[: max(0, args.limit)]:
+        print(f"EVENT SIGNAL {signal.signal_state.value}: asset={signal.asset or 'UNRESOLVED'} event={signal.event_type} age={signal.event_age}")
+        print(f"  mechanism={signal.transmission_mechanism or 'UNKNOWN'} exhaustion={signal.exhaustion_state}")
+        print(f"  why={signal.trigger}")
     _print_ranked(ranked, stories, args.limit)
 
 
