@@ -190,15 +190,16 @@ class StoryEngine:
         now = as_of or self.now()
         return [(item, tuple(engine.assess(event, as_of=now) for event in item.semantic_events)) for item in intelligence]
 
-    def build_signals(self, intelligence, market_adapter, *, as_of=None):
+    def build_signals(self, intelligence, market_adapter, *, as_of=None, market_observations=None):
         from .signal import EventSignalEngine
         now = as_of or self.now()
         signal_engine = EventSignalEngine()
+        shared = None if market_observations is None else tuple(market_observations)
         output = []
         for item in intelligence:
             timings = self.build_event_timing([item], as_of=now)[0][1]
             symbols = tuple(symbol for mapping in item.event_mappings for symbol in mapping.assets)
-            observations = market_adapter.observations(symbols, now, now)
+            observations = shared if shared is not None else market_adapter.observations(symbols, min((event.event_time for event in item.semantic_events if event.event_time is not None), default=now), now)
             output.extend(signal_engine.assess_many(item.semantic_events, item.event_mappings, timings, observations, as_of=now))
         return tuple(output)
 
