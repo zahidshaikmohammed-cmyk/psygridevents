@@ -102,7 +102,7 @@ def main() -> None:
     start = min(event_times, default=now)
     market_observations = market_adapter.observations(symbols, start, now)
     stories = engine.build_market_confirmation(stories, market_observations)
-    signals = engine.build_signals(stories, market_adapter, as_of=now)
+    signals = engine.build_signals(stories, market_adapter, as_of=now, market_observations=market_observations)
     stories = engine.build_prioritization(stories)
     ranked = engine.rank_prioritization(stories)
     current_events = tuple(event for item in stories for event in item.semantic_events)
