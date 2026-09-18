@@ -104,14 +104,20 @@ class EventSignalEngine:
             state = SignalState.EXHAUSTED
             exhaustion = "EXHAUSTED"
             reason = "Observed event-time repricing has already become substantial; no fresh early signal is emitted."
+        elif timing.event_age_seconds is not None and timing.event_age_seconds > self.max_early_minutes * 60:
+            state = SignalState.WATCH
+            exhaustion = "LATE"
+            reason = "Event is outside the configured early-signal timing window."
         elif expected == "long" and (response.price_displacement or 0.0) >= self.early_move and response.vwap_state == "above" and response.reversal_state != "adverse":
-            state = SignalState.EARLY_LONG
+            corroborated = response.volume_state == "expanded" and (response.relative_performance is not None and response.relative_performance > 0)
+            state = SignalState.CONFIRMED if corroborated else SignalState.EARLY_LONG
             exhaustion = "NOT_EXHAUSTED"
-            reason = "Early directional displacement is present while the move remains inside the non-exhausted threshold."
+            reason = "Directional displacement is developing before exhaustion; independent volume and benchmark-relative evidence may elevate it to CONFIRMED."
         elif expected == "short" and (response.price_displacement or 0.0) <= -self.early_move and response.vwap_state == "below" and response.reversal_state != "adverse":
-            state = SignalState.EARLY_SHORT
+            corroborated = response.volume_state == "expanded" and (response.relative_performance is not None and response.relative_performance < 0)
+            state = SignalState.CONFIRMED if corroborated else SignalState.EARLY_SHORT
             exhaustion = "NOT_EXHAUSTED"
-            reason = "Early directional displacement is present while the move remains inside the non-exhausted threshold."
+            reason = "Directional displacement is developing before exhaustion; independent volume and benchmark-relative evidence may elevate it to CONFIRMED."
         else:
             state = SignalState.WATCH
             exhaustion = "NOT_EXHAUSTED" if timing.state in {EventTimingState.NEW, EventTimingState.EARLY, EventTimingState.DEVELOPING} else "LATE"
