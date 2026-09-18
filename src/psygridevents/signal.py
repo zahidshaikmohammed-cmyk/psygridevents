@@ -96,14 +96,14 @@ class EventSignalEngine:
             state = SignalState.WATCH
             exhaustion = "UNKNOWN"
             reason = "Signal remains on WATCH because timing or live market evidence is incomplete."
-        elif abs(response.price_displacement or 0.0) >= self.exhaustion_move:
-            state = SignalState.EXHAUSTED
-            exhaustion = "EXHAUSTED"
-            reason = "Observed event-time repricing has already become substantial; no fresh early signal is emitted."
         elif response.reversal_state == "invalidated":
             state = SignalState.INVALIDATED
             exhaustion = "REVERSING"
             reason = "Market response moved materially against the documented event direction."
+        elif abs(response.price_displacement or 0.0) >= self.exhaustion_move:
+            state = SignalState.EXHAUSTED
+            exhaustion = "EXHAUSTED"
+            reason = "Observed event-time repricing has already become substantial; no fresh early signal is emitted."
         elif expected == "long" and (response.price_displacement or 0.0) >= self.early_move and response.vwap_state == "above" and response.reversal_state != "adverse":
             state = SignalState.EARLY_LONG
             exhaustion = "NOT_EXHAUSTED"
