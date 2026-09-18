@@ -89,7 +89,7 @@ def test_missing_live_market_data_stays_watch():
 
 
 def test_early_bullish_response_emits_early_long_before_exhaustion():
-    market = [obs(0, 100), obs(5, 100.3, vwap=100.1, volume=150, average_volume=100, benchmark_return=0.001)]
+    market = [obs(0, 100), obs(5, 100.3, vwap=100.1, volume=100, average_volume=100)]
     result = EventSignalEngine().assess(event(), mapping(), timing(T0 + timedelta(minutes=5)), market, as_of=T0 + timedelta(minutes=5))
     assert result.signal_state == SignalState.EARLY_LONG
     assert result.exhaustion_state == "NOT_EXHAUSTED"
