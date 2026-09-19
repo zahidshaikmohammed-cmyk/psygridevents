@@ -194,18 +194,30 @@ Limit human-readable ranked output:
 python -m psygridevents.main --once --limit 10
 ```
 
-Run continuously, polling for new events/market state and printing only signal changes:
+Run continuously, polling for new events/market state and printing only signal changes (safe to restart -- see `docs/OPERATIONS.md`):
 
 ```bash
 python -m psygridevents.main --watch --interval 60
 ```
 
-No API keys are stored in the repository. Licensed providers remain disabled until credentials and entitlements are supplied.
+Print a diagnostic health/status snapshot (never runs acquisition, never affects a signal):
+
+```bash
+python -m psygridevents.main --health
+```
+
+Run the deterministic offline replay harness (engineering validation only; safe with the market closed):
+
+```bash
+python tools/run_replay_demo.py
+```
+
+No API keys are stored in the repository. Licensed providers remain disabled until credentials and entitlements are supplied. See `docs/OPERATIONS.md` for the full CLI reference, the `MARKET_OPEN`/`MARKET_CLOSED`/`MARKET_DATA_UNAVAILABLE` distinction, health/status fields, and the persistence/idempotency contract.
 
 ## Status
 
-**CP11 — Event-driven signal engine implemented, now wired to live Psygrid market data.** The repository has the semantic/event foundation, explicit transmission, novelty/materiality/contradiction context, synchronized market confirmation, deterministic eight-factor prioritization, a versioned production-facing JSON/CLI delivery boundary, the CP8–CP11 event → asset → mechanism → timing → live market response → exhaustion → signal chain, a 990-instrument universe synced from and verified against Psygrid's canonical source, and a production `MarketDataAdapter` that consumes Psygrid's live feed — all with regression coverage.
+**CP11 — Event-driven signal engine implemented, wired to live Psygrid market data, and hardened for production operation while the market is closed.** The repository has the semantic/event foundation, explicit transmission, novelty/materiality/contradiction context, synchronized market confirmation, deterministic eight-factor prioritization, a versioned production-facing JSON/CLI delivery boundary, the CP8–CP11 event → asset → mechanism → timing → live market response → exhaustion → signal chain, a 990-instrument universe synced from and verified against Psygrid's canonical source, a production `MarketDataAdapter` that consumes Psygrid's live feed, per-provider acquisition failure isolation, restart-safe publication persistence, a diagnostic health/status surface, and a deterministic offline replay harness — all with regression coverage (220+ tests).
 
-This session has no network route to the Oracle production host, so live validation against a reachable Psygrid instance during NSE market hours has not been performed; the fail-closed path (Psygrid unreachable → `WATCH`/`NO_SIGNAL`, never a fabricated signal) has been verified for real against that exact unreachability. See `docs/LIVE_MARKET_DATA_INTEGRATION.md` for the full status and remaining validation step.
+Everything except live signal generation has been verified while the market is closed: the complete offline pipeline, the 990-universe equality check (re-verified live against Psygrid's current GitHub source), the Psygrid adapter's fail-closed/timeout/malformed-data/market-state handling, and deterministic replay proving no future observation ever leaks into an earlier checkpoint. This session has no network route to the Oracle production host itself, so live signal content (an actual `EARLY_LONG`/`CONFIRMED` from real ticks) has not been observed — that is the one thing intentionally left for the next live NSE session. See `docs/LIVE_MARKET_DATA_INTEGRATION.md` and `docs/OPERATIONS.md`.
 
 Next: wire a credentialed live market-data adapter and a verified NSE issuer-master source, then run historical replay validation (CP: timing/leakage evaluation) rather than adding opaque scoring layers.

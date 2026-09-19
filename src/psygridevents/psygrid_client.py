@@ -23,6 +23,16 @@ DEFAULT_BASE_URL = "http://140.245.226.102:10000"
 
 IST = ZoneInfo("Asia/Kolkata")
 
+# Explicit market/session states. These are deliberately distinct concepts:
+# "the exchange is outside trading hours" (MARKET_CLOSED) is not the same
+# fact as "Psygrid could not be reached or is not serving usable data"
+# (MARKET_DATA_UNAVAILABLE), and neither implies a live signal.
+MARKET_OPEN = "MARKET_OPEN"
+MARKET_CLOSED = "MARKET_CLOSED"
+MARKET_DATA_UNAVAILABLE = "MARKET_DATA_UNAVAILABLE"
+
+CANONICAL_MARKET_DATA_UNAVAILABLE = "CANONICAL_MARKET_DATA_UNAVAILABLE"
+
 
 @dataclass(frozen=True)
 class FetchDiagnostics:
@@ -58,6 +68,29 @@ class SymbolFreshness:
 
 
 @dataclass(frozen=True)
+class MarketSessionStatus:
+    """Is the exchange open, closed, or is Psygrid simply unreachable?
+
+    `market_state` is one of MARKET_OPEN / MARKET_CLOSED /
+    MARKET_DATA_UNAVAILABLE. `raw_status` is Psygrid's own reported session
+    status verbatim (its `/public/live.json` "status" field: "OK", "CLOSED",
+    "AUTHENTICATING", "AUTH_ERROR", "AUTH_WAITING", "CONFIG_ERROR", ...) when
+    Psygrid was reachable, else None.
+
+    Caveat (observed, not assumed): Psygrid's own session.py::in_market()
+    checks only the configured time-of-day window, not the day of week, so
+    MARKET_OPEN reflects Psygrid's own self-report and can be true on a
+    non-trading weekend. `live_data_received` from `universe_coverage()` (or
+    UniverseCoverageReport) -- not this state alone -- is the authoritative
+    signal that real ticks are actually flowing.
+    """
+
+    market_state: str
+    raw_status: str | None
+    reason: str
+
+
+@dataclass(frozen=True)
 class UniverseCoverageReport:
     """Runtime coverage of the full configured 990-symbol universe.
 
@@ -71,6 +104,8 @@ class UniverseCoverageReport:
     stale: int
     missing: int
     error: str | None
+    market_state: str = MARKET_DATA_UNAVAILABLE
+    raw_status: str | None = None
 
 
 def parse_ist_timestamp(value: Any) -> datetime | None:
@@ -212,17 +247,48 @@ class PsygridClient:
     def fetch_universe_snapshot(self) -> tuple[dict[str, Any] | None, int | None, str | None]:
         return self._get("/public/live.json")
 
+    @staticmethod
+    def _map_market_state(payload: dict[str, Any] | None, error: str | None) -> MarketSessionStatus:
+        """Map Psygrid's own reported status to MARKET_OPEN/CLOSED/DATA_UNAVAILABLE.
+
+        Never infers "closed" from a clock or calendar of our own -- only
+        from what Psygrid itself reports, so this can never silently
+        disagree with the actual production system.
+        """
+        if payload is None:
+            return MarketSessionStatus(MARKET_DATA_UNAVAILABLE, None, error or "Psygrid unreachable")
+        raw_status = payload.get("status")
+        if raw_status == "OK":
+            return MarketSessionStatus(MARKET_OPEN, raw_status, "Psygrid reports an active (LIVE) session.")
+        if raw_status == "CLOSED":
+            return MarketSessionStatus(MARKET_CLOSED, raw_status, "Psygrid reports the session as CLOSED.")
+        return MarketSessionStatus(
+            MARKET_DATA_UNAVAILABLE, raw_status,
+            f"Psygrid is reachable but not serving a usable session (status={raw_status!r}).",
+        )
+
+    def market_session_status(self) -> MarketSessionStatus:
+        payload, _status, error = self.fetch_universe_snapshot()
+        return self._map_market_state(payload, error)
+
     def universe_coverage(
         self, configured_symbols: Iterable[str], *, as_of: datetime, max_age_seconds: float = 120.0
     ) -> UniverseCoverageReport:
         configured = tuple(configured_symbols)
         payload, _status, error = self.fetch_universe_snapshot()
+        market_status = self._map_market_state(payload, error)
         if payload is None:
-            return UniverseCoverageReport(len(configured), 0, 0, 0, len(configured), error)
+            return UniverseCoverageReport(
+                len(configured), 0, 0, 0, len(configured), error,
+                market_state=market_status.market_state, raw_status=market_status.raw_status,
+            )
 
         stocks = payload.get("stocks")
         if not isinstance(stocks, dict):
-            return UniverseCoverageReport(len(configured), 0, 0, 0, len(configured), "malformed live.json: missing stocks object")
+            return UniverseCoverageReport(
+                len(configured), 0, 0, 0, len(configured), "malformed live.json: missing stocks object",
+                market_state=market_status.market_state, raw_status=market_status.raw_status,
+            )
 
         resolved = live = stale = missing = 0
         for symbol in configured:
@@ -243,7 +309,10 @@ class PsygridClient:
                 live += 1
             else:
                 stale += 1
-        return UniverseCoverageReport(len(configured), resolved, live, stale, missing, None)
+        return UniverseCoverageReport(
+            len(configured), resolved, live, stale, missing, None,
+            market_state=market_status.market_state, raw_status=market_status.raw_status,
+        )
 
     def health(self) -> tuple[bool, str | None]:
         payload, _status, error = self._get("/health")

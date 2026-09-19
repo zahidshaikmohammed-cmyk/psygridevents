@@ -3,10 +3,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
+import httpx
+
 from psygridevents.acquisition import RawObservation
 from psygridevents.main import build_market_data_adapter, run_pipeline
 from psygridevents.market_confirmation import MarketObservation
 from psygridevents.market_data import NullMarketDataAdapter, PsygridMarketDataAdapter, StaticMarketDataAdapter
+from psygridevents.psygrid_client import PsygridClient
 from psygridevents.story_engine import StoryEngine
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +71,44 @@ def test_run_pipeline_produces_early_long_with_synthetic_market_data() -> None:
     signal = stories[0].signals[0]
     assert signal.signal_state == "EARLY_LONG"
     assert payload["ranked_events"][0]["signal"]["signal_state"] == "EARLY_LONG"
+
+
+def test_run_pipeline_records_market_closed_distinctly_from_unavailable() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/public/stock/RELIANCE.json":
+            return httpx.Response(200, json={"service": "PSYGRID", "status": "OK", "symbol": "RELIANCE", "security_id": "1", "candles_1m": []})
+        return httpx.Response(200, json={"service": "PSYGRID", "status": "CLOSED", "stocks": {}})
+
+    transport = httpx.MockTransport(handler)
+    http_client = httpx.Client(transport=transport, base_url="http://psygrid.test")
+    market_data = PsygridMarketDataAdapter("http://psygrid.test", client=PsygridClient("http://psygrid.test", client=http_client))
+
+    engine = StoryEngine(INSTRUMENTS)
+    with mock.patch.object(StoryEngine, "acquire", return_value=[_observation("RELIANCE wins order worth INR 500 crore")]):
+        _observations, stories, _ranked, _payload = run_pipeline(engine, feeds=[], market_data=market_data, as_of=T0)
+
+    signal = stories[0].signals[0]
+    assert signal.market_session_state == "MARKET_CLOSED"
+    assert signal.signal_state == "WATCH"  # no candles either way, but now explicitly because market is closed
+
+
+def test_run_pipeline_market_session_state_stays_unknown_when_no_asset_resolves() -> None:
+    # Triggers a real "legal" semantic event (no macro/sector fallback is
+    # configured for "legal"), and names no configured instrument -- CP8
+    # must leave it unresolved, and the pipeline must never touch the
+    # market-data adapter at all for an event with no asset.
+    engine = StoryEngine(INSTRUMENTS)
+    with mock.patch.object(StoryEngine, "acquire", return_value=[_observation("A court order was issued in an unrelated litigation matter")]):
+        _observations, stories, _ranked, _payload = run_pipeline(
+            engine, feeds=[], market_data=NullMarketDataAdapter(), as_of=T0
+        )
+
+    assert len(stories) == 1
+    assert len(stories[0].signals) >= 1
+    for signal in stories[0].signals:
+        assert signal.asset is None
+        assert signal.signal_state == "NO_SIGNAL"
+        assert signal.market_session_state == "UNKNOWN"
 
 
 def test_run_pipeline_respects_since_for_incremental_acquisition() -> None:

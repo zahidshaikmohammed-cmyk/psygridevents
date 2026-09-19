@@ -46,6 +46,18 @@ class StoryIntelligence:
     signals: tuple[SignalAssessment, ...] = ()
 
 
+@dataclass(frozen=True)
+class ProviderAcquisitionStatus:
+    """One provider's outcome for a single acquire() call -- health/diagnostics only."""
+
+    provider_id: str
+    publisher: str
+    attempted_at: datetime
+    success: bool
+    observation_count: int
+    error: str | None
+
+
 class StoryEngine:
     """Acquisition-to-semantic-event pipeline with explicit provenance."""
 
@@ -66,6 +78,7 @@ class StoryEngine:
         issuer_records: tuple | None = None,
     ) -> None:
         self.acquirer = RSSAcquirer()
+        self.last_acquisition_status: dict[str, ProviderAcquisitionStatus] = {}
         self.resolver = InstrumentResolver.from_instrument_file(instrument_file)
         if issuer_records:
             # CP8: extend entity resolution with verified issuer names/aliases
@@ -112,19 +125,49 @@ class StoryEngine:
         self.signal_engine = SignalEngine()
 
     def acquire(self, feeds: list[dict], since: datetime | None = None) -> list[RawObservation]:
+        """Acquire every enabled feed, isolating one provider's failure from the rest.
+
+        A single unreachable/malformed/timed-out feed must never prevent the
+        other configured feeds from being acquired. Failures are recorded on
+        `self.last_acquisition_status` (provider_id -> ProviderAcquisitionStatus)
+        for health/diagnostics reporting; they are never turned into
+        fabricated observations.
+        """
         observations: list[RawObservation] = []
+        status: dict[str, ProviderAcquisitionStatus] = {}
         for feed in feeds:
             if not feed.get("enabled") or feed.get("mode") == "catalogue":
                 continue
-            observations.extend(
-                self.acquirer.fetch(
+            provider_id = str(feed.get("provider_id", feed.get("url", "unknown")))
+            attempted_at = datetime.now(timezone.utc)
+            try:
+                fetched = self.acquirer.fetch(
                     provider_id=feed["provider_id"],
                     publisher=feed["publisher"],
                     url=feed["url"],
                     source_tier=int(feed["tier"]),
                     since=since,
                 )
+            except Exception as exc:  # noqa: BLE001 - one bad provider must not kill acquisition
+                status[provider_id] = ProviderAcquisitionStatus(
+                    provider_id=provider_id,
+                    publisher=str(feed.get("publisher", "")),
+                    attempted_at=attempted_at,
+                    success=False,
+                    observation_count=0,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                continue
+            observations.extend(fetched)
+            status[provider_id] = ProviderAcquisitionStatus(
+                provider_id=provider_id,
+                publisher=str(feed.get("publisher", "")),
+                attempted_at=attempted_at,
+                success=True,
+                observation_count=len(fetched),
+                error=None,
             )
+        self.last_acquisition_status = status
         return [normalized_observation(item) for item in observations]
 
     def build_stories(
@@ -322,9 +365,19 @@ class StoryEngine:
         return result
 
     def build_signals(
-        self, intelligence: list[StoryIntelligence], *, as_of: datetime | None = None
+        self,
+        intelligence: list[StoryIntelligence],
+        *,
+        as_of: datetime | None = None,
+        market_session_state: str = "UNKNOWN",
     ) -> list[StoryIntelligence]:
-        """CP11: combine event/asset/mechanism/timing/market-response/exhaustion into a signal."""
+        """CP11: combine event/asset/mechanism/timing/market-response/exhaustion into a signal.
+
+        `market_session_state` is a single diagnostic fact for the whole run
+        (MARKET_OPEN/MARKET_CLOSED/MARKET_DATA_UNAVAILABLE/UNKNOWN) -- it is
+        recorded on every signal for observability and never changes the
+        signal-state decision rules.
+        """
         result: list[StoryIntelligence] = []
         for item in intelligence:
             asset_mechanisms = item.asset_mechanisms or self.asset_mechanism_engine.assess_many(
@@ -353,6 +406,7 @@ class StoryEngine:
                     exhaustion=exhaustion,
                     confirmation=confirmation,
                     as_of=as_of,
+                    market_session_state=market_session_state,
                 )
                 for event, mappings, timing, response, exhaustion, confirmation in zipped
             ]

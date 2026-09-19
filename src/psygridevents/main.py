@@ -9,9 +9,11 @@ from pathlib import Path
 import yaml
 
 from .delivery import build_intelligence_payload
+from .health import build_health_report, health_report_to_dict
 from .market_data import MarketDataAdapter, NullMarketDataAdapter, PsygridMarketDataAdapter
 from .provider_registry import build_rss_adapters, load_provider_specs
 from .psygrid_client import DEFAULT_BASE_URL
+from .state_store import DEFAULT_STATE_PATH, PublicationStateStore
 from .story_engine import StoryEngine, StoryIntelligence
 from .universe import load_instruments
 
@@ -54,18 +56,32 @@ def run_pipeline(
     # CP8 resolves EVENT -> ASSET first; only resolved assets are ever fetched
     # from the live market-data adapter (event-driven, not a 990-symbol scan).
     stories = engine.build_asset_mechanism(stories)
+    has_resolved_asset = any(
+        mapping.resolved and mapping.asset
+        for story in stories
+        for mappings in story.asset_mechanisms
+        for mapping in mappings
+    )
+
     market_observations: list = []
-    for story in stories:
-        for mappings in story.asset_mechanisms:
-            for mapping in mappings:
-                if mapping.resolved and mapping.asset:
-                    market_observations.extend(market_data.observations(mapping.asset, as_of=now))
+    market_session_state = "UNKNOWN"
+    if has_resolved_asset:
+        for story in stories:
+            for mappings in story.asset_mechanisms:
+                for mapping in mappings:
+                    if mapping.resolved and mapping.asset:
+                        market_observations.extend(market_data.observations(mapping.asset, as_of=now))
+        if isinstance(market_data, PsygridMarketDataAdapter):
+            # "Market closed" (the exchange is outside trading hours) and
+            # "Psygrid unreachable" are different facts; this distinguishes
+            # them explicitly rather than treating both as "no signal".
+            market_session_state = market_data.market_session_status().market_state
 
     stories = engine.build_market_confirmation(stories, market_observations)
     stories = engine.build_event_timing(stories, as_of=now)
     stories = engine.build_market_response(stories, market_observations, as_of=now)
     stories = engine.build_exhaustion(stories)
-    stories = engine.build_signals(stories, as_of=now)
+    stories = engine.build_signals(stories, as_of=now, market_session_state=market_session_state)
 
     payload = build_intelligence_payload(stories, ranked, generated_at=now)
     return observations, stories, ranked, payload
@@ -75,6 +91,7 @@ def _print_coverage(market_data: MarketDataAdapter, instruments: tuple[str, ...]
     if not isinstance(market_data, PsygridMarketDataAdapter):
         return
     report = market_data.universe_coverage(instruments, as_of=as_of)
+    print(f"Market state: {report.market_state} (Psygrid status={report.raw_status!r})")
     if report.error:
         print(f"Live market-data coverage: CANONICAL_MARKET_DATA_UNAVAILABLE ({report.error})")
         return
@@ -119,8 +136,23 @@ def _run_once(args: argparse.Namespace) -> None:
     market_data = build_market_data_adapter(args)
     feeds = _load_feeds()
 
-    observations, stories, ranked, payload = run_pipeline(engine, feeds, market_data)
+    # --state-file is opt-in for --once: passing it makes repeated
+    # cron-driven invocations incremental (resume acquisition from the last
+    # successful `since`) and idempotent (a downstream consumer can tell an
+    # unchanged signal from a genuinely new one). Omitting it keeps --once's
+    # original stateless, fully-reproducible-per-invocation behavior.
+    store = PublicationStateStore(args.state_file) if args.state_file else None
+    since = store.since() if store else None
+
+    observations, stories, ranked, payload = run_pipeline(engine, feeds, market_data, since=since)
     now = datetime.fromisoformat(payload["generated_at"])
+
+    if store is not None:
+        for story in stories:
+            for signal in story.signals:
+                store.record_signal(signal.event_id, signal.signal_state, as_of=now)
+        store.advance_since(now)
+        store.save()
 
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
@@ -144,32 +176,63 @@ def _run_watch(args: argparse.Namespace) -> None:
     be polled -- see docs/LIVE_MARKET_DATA_INTEGRATION.md), so polling at a
     configurable interval is the minimal correct client for its contract,
     not an invented complication.
+
+    Safe restart: acquisition resumes from the persisted watermark and
+    already-published signal states are loaded from disk, so a process
+    restart never re-announces an unchanged signal as brand new, and never
+    silently re-processes the entire source history from scratch.
     """
     engine = StoryEngine(ROOT / "config" / "instruments.json")
     market_data = build_market_data_adapter(args)
     feeds = _load_feeds()
 
-    since: datetime | None = None
-    last_signal_state: dict[str, str] = {}
-    print(f"PSYGRIDEVENTS watch mode: polling every {args.interval}s (Ctrl+C to stop)")
+    store = PublicationStateStore(args.state_file or DEFAULT_STATE_PATH)
+    since = store.since()
+    print(
+        f"PSYGRIDEVENTS watch mode: polling every {args.interval}s "
+        f"(state file: {store.path}, resuming since={since.isoformat() if since else 'beginning'}) "
+        "(Ctrl+C to stop)"
+    )
     try:
         while True:
             _observations, stories, _ranked, payload = run_pipeline(engine, feeds, market_data, since=since)
             now = datetime.fromisoformat(payload["generated_at"])
             for story in stories:
                 for signal in story.signals:
-                    previous = last_signal_state.get(signal.event_id)
+                    previous = store.last_signal_state(signal.event_id)
                     if previous != signal.signal_state:
                         print(
                             f"[{now.isoformat()}] SIGNAL CHANGE {signal.event_id}: "
                             f"{previous or 'NEW'} -> {signal.signal_state} "
                             f"(asset={signal.asset or 'unresolved'}, {signal.trigger})"
                         )
-                        last_signal_state[signal.event_id] = signal.signal_state
+                        store.record_signal(signal.event_id, signal.signal_state, as_of=now)
             since = now
+            store.advance_since(now)
+            store.save()
             time.sleep(max(1.0, args.interval))
     except KeyboardInterrupt:
         print("Watch mode stopped.")
+
+
+def _run_health(args: argparse.Namespace) -> None:
+    """Fast, pipeline-independent health/status check (diagnostic only).
+
+    Never runs acquisition; safe to call frequently (e.g. from an uptime
+    probe). Reports universe integrity, Psygrid connectivity/market state,
+    and provider history persisted by a previous --once/--watch run (if
+    --state-file points at one). This never feeds back into a signal.
+    """
+    market_data = build_market_data_adapter(args)
+    store = PublicationStateStore(args.state_file) if args.state_file else None
+    report = build_health_report(
+        market_data=market_data,
+        market_data_source=args.market_data,
+        store=store,
+    )
+    print(json.dumps(health_report_to_dict(report), ensure_ascii=False, indent=2))
+    if report.application_status == "UNAVAILABLE":
+        raise SystemExit(1)
 
 
 def main() -> None:
@@ -213,7 +276,27 @@ def main() -> None:
         default=DEFAULT_BASE_URL,
         help=f"Base URL for the Psygrid market-data adapter (default: {DEFAULT_BASE_URL}).",
     )
+    parser.add_argument(
+        "--state-file",
+        default=None,
+        help="Path to the publication state file (acquisition watermark + last-published signal "
+        f"states). --watch always uses one (default: {DEFAULT_STATE_PATH}); --once is stateless "
+        "unless this is provided.",
+    )
+    parser.add_argument(
+        "--health",
+        action="store_true",
+        help="Print a diagnostic health/status report (universe, providers, Psygrid connectivity) "
+        "and exit. Never runs acquisition and never affects any signal.",
+    )
     args = parser.parse_args()
+
+    if args.health:
+        # Deliberately does not call load_instruments()/etc. unconditionally
+        # like the paths below: a broken universe must be reported by
+        # _run_health as UNAVAILABLE, not crash main() before it can.
+        _run_health(args)
+        return
 
     instruments = load_instruments()
     specs = load_provider_specs()

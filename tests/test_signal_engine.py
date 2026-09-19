@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from psygridevents.asset_mechanism import AssetMechanismMapping
 from psygridevents.event_timing import EventTimingAssessment
@@ -224,3 +224,27 @@ def test_trigger_and_invalidation_are_always_populated() -> None:
         assessment = assess(**state_kwargs)
         assert assessment.trigger
         assert assessment.invalidation
+
+
+def test_market_observation_timestamp_and_freshness_are_exposed_live() -> None:
+    assessment = assess(resp=response(latest_timestamp=T0), tim=timing(as_of=T0))
+    assert assessment.market_observation_timestamp == T0
+    assert assessment.market_data_freshness == "LIVE"
+
+
+def test_market_data_freshness_is_stale_when_old() -> None:
+    old_ts = T0 - timedelta(hours=2)
+    assessment = assess(resp=response(latest_timestamp=old_ts))
+    assert assessment.market_observation_timestamp == old_ts
+    assert assessment.market_data_freshness == "STALE"
+
+
+def test_market_data_freshness_is_no_data_without_a_market_response() -> None:
+    assessment = assess(resp=None, exh=exhaustion(state="unknown", market_response_state="unknown"))
+    assert assessment.market_observation_timestamp is None
+    assert assessment.market_data_freshness == "NO_DATA"
+
+
+def test_market_session_state_defaults_to_unknown_when_not_supplied() -> None:
+    assessment = assess()
+    assert assessment.market_session_state == "UNKNOWN"

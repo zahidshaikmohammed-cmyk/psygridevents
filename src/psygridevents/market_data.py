@@ -8,6 +8,7 @@ from .market_confirmation import MarketObservation
 from .psygrid_client import (
     DEFAULT_BASE_URL,
     FetchDiagnostics,
+    MarketSessionStatus,
     PsygridClient,
     SymbolFreshness,
     UniverseCoverageReport,
@@ -134,6 +135,15 @@ class PsygridMarketDataAdapter(MarketDataAdapter):
     ) -> UniverseCoverageReport:
         """Runtime coverage of the full configured universe from one /public/live.json fetch."""
         return self._client.universe_coverage(configured_symbols, as_of=as_of, max_age_seconds=max_age_seconds)
+
+    def market_session_status(self) -> MarketSessionStatus:
+        """MARKET_OPEN / MARKET_CLOSED / MARKET_DATA_UNAVAILABLE, from Psygrid's own report.
+
+        This is a distinct fact from per-symbol freshness/staleness: it
+        answers "is the exchange session Psygrid reports on open at all",
+        never "is Psygrid reachable" conflated with "is the market closed".
+        """
+        return self._client.market_session_status()
 
     def close(self) -> None:
         self._client.close()

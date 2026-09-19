@@ -11,6 +11,8 @@ from .market_confirmation import MarketConfirmationAssessment
 from .market_response import MarketResponseAssessment
 from .semantic import SemanticEvent
 
+DEFAULT_FRESHNESS_THRESHOLD_SECONDS = 120.0
+
 SIGNAL_STATES = (
     "NO_SIGNAL",
     "WATCH",
@@ -58,6 +60,9 @@ class SignalAssessment:
     evidence: tuple[str, ...]
     uncertainty: tuple[str, ...]
     source_references: tuple[str, ...]
+    market_session_state: str = "UNKNOWN"
+    market_observation_timestamp: datetime | None = None
+    market_data_freshness: str = "NO_DATA"
 
 
 class SignalEngine:
@@ -81,6 +86,7 @@ class SignalEngine:
         exhaustion: ExhaustionAssessment | None,
         confirmation: MarketConfirmationAssessment | None,
         as_of: datetime | None = None,
+        market_session_state: str = "UNKNOWN",
     ) -> SignalAssessment:
         current = as_of or datetime.now(timezone.utc)
         source_references = tuple(dict.fromkeys(span.observation_url for span in event.evidence))
@@ -96,6 +102,9 @@ class SignalEngine:
         asset_type = asset_mapping.asset_type if asset_mapping else "unresolved"
         mechanism = asset_mapping.mechanism if asset_mapping else None
         direction = asset_mapping.expected_direction if asset_mapping else "unknown"
+
+        market_observation_timestamp = response.latest_timestamp if response else None
+        market_data_freshness = self._freshness(market_observation_timestamp, current)
 
         common = dict(
             event_id=event.event_id,
@@ -116,6 +125,9 @@ class SignalEngine:
             vwap_state=response.vwap_state if response else "unavailable",
             exhaustion_state=exhaustion_state,
             source_references=source_references,
+            market_session_state=market_session_state,
+            market_observation_timestamp=market_observation_timestamp,
+            market_data_freshness=market_data_freshness,
         )
 
         # --- Gate 1: minimum evidence required for ANY asset-specific signal ---
@@ -292,3 +304,22 @@ class SignalEngine:
         as_of_utc = as_of if as_of.tzinfo else as_of.replace(tzinfo=timezone.utc)
         key = f"{event_id}|{as_of_utc.isoformat()}"
         return "signal-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
+
+    @staticmethod
+    def _freshness(
+        observation_timestamp: datetime | None,
+        as_of: datetime,
+        *,
+        threshold_seconds: float = DEFAULT_FRESHNESS_THRESHOLD_SECONDS,
+    ) -> str:
+        """LIVE/STALE/TIME_ERROR/NO_DATA, derived from data already fetched.
+
+        Never issues a fresh network request: it is purely a function of the
+        latest observation timestamp CP10 already obtained and `as_of`.
+        """
+        if observation_timestamp is None:
+            return "NO_DATA"
+        age = (as_of - observation_timestamp).total_seconds()
+        if age < 0:
+            return "TIME_ERROR"
+        return "LIVE" if age <= threshold_seconds else "STALE"

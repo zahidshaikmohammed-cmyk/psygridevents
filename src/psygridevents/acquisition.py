@@ -29,8 +29,9 @@ class RSSAcquirer:
     later layers.
     """
 
-    def __init__(self, timeout_seconds: float = 15.0) -> None:
+    def __init__(self, timeout_seconds: float = 15.0, *, client: httpx.Client | None = None) -> None:
         self.timeout = httpx.Timeout(timeout_seconds)
+        self._client = client
 
     def fetch(
         self,
@@ -41,7 +42,8 @@ class RSSAcquirer:
         source_tier: int,
         since: datetime | None = None,
     ) -> list[RawObservation]:
-        response = httpx.get(
+        get = self._client.get if self._client is not None else httpx.get
+        response = get(
             url,
             timeout=self.timeout,
             follow_redirects=True,

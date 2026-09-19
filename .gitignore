@@ -14,3 +14,9 @@ htmlcov/
 *.log
 data/raw/
 data/cache/
+
+# Runtime publication state (acquisition watermark + last-published signal
+# states) written by `--watch` and by `--once --state-file ...`. This is
+# per-deployment runtime state, not source.
+.psygridevents_state.json
+.psygridevents_state.json.tmp

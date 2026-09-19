@@ -175,6 +175,8 @@ def test_universe_coverage_counts_resolved_live_stale_and_missing() -> None:
     assert report.stale == 1  # HDFCBANK: hours old
     assert report.missing == 1  # ICICIBANK not present at all
     assert report.error is None
+    assert report.market_state == "MARKET_OPEN"
+    assert report.raw_status == "OK"
 
 
 def test_universe_coverage_fails_closed_when_endpoint_unavailable() -> None:
@@ -187,3 +189,47 @@ def test_universe_coverage_fails_closed_when_endpoint_unavailable() -> None:
     assert report.configured == 2
     assert report.missing == 2
     assert report.error is not None
+    assert report.market_state == "MARKET_DATA_UNAVAILABLE"
+    assert report.raw_status is None
+
+
+def test_market_session_status_maps_ok_to_market_open() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"service": "PSYGRID", "status": "OK", "stocks": {}})
+
+    client = _client(handler)
+    status = client.market_session_status()
+    assert status.market_state == "MARKET_OPEN"
+    assert status.raw_status == "OK"
+
+
+def test_market_session_status_maps_closed_to_market_closed() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"service": "PSYGRID", "status": "CLOSED", "stocks": {}})
+
+    client = _client(handler)
+    status = client.market_session_status()
+    assert status.market_state == "MARKET_CLOSED"
+    assert status.raw_status == "CLOSED"
+
+
+@pytest.mark.parametrize("raw_status", ["AUTHENTICATING", "AUTH_ERROR", "AUTH_WAITING", "CONFIG_ERROR", "STARTING"])
+def test_market_session_status_maps_other_statuses_to_data_unavailable(raw_status) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"service": "PSYGRID", "status": raw_status})
+
+    client = _client(handler)
+    status = client.market_session_status()
+    assert status.market_state == "MARKET_DATA_UNAVAILABLE"
+    assert status.raw_status == raw_status
+
+
+def test_market_session_status_unreachable_is_data_unavailable_with_no_raw_status() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = _client(handler)
+    status = client.market_session_status()
+    assert status.market_state == "MARKET_DATA_UNAVAILABLE"
+    assert status.raw_status is None
+    assert "ConnectError" in status.reason
