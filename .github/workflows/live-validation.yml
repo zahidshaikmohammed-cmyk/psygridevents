@@ -13,10 +13,22 @@ on:
         description: "Psygrid base URL to validate against"
         required: false
         default: "http://140.245.226.102:10000"
+  # workflow_dispatch is only invocable via the API once a workflow file is
+  # registered on the default branch; this repo's default branch is `main`
+  # and this workflow intentionally lives on a feature branch first. The
+  # push trigger below lets it run from here without touching `main`.
+  push:
+    branches: [claude/upbeat-archimedes-n98qsa]
+    paths: [".github/workflows/live-validation.yml"]
 
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      # inputs.* is only populated for workflow_dispatch runs; the push
+      # trigger (used until this workflow is registered on the default
+      # branch) has no inputs context, hence the fallback default here.
+      MARKET_DATA_URL: ${{ inputs.market_data_url || 'http://140.245.226.102:10000' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,11 +39,12 @@ jobs:
 
       - name: Psygrid reachability and root status
         run: |
+          echo "Target: $MARKET_DATA_URL"
           echo "== /health =="
-          curl -fsS --max-time 15 "${{ inputs.market_data_url }}/health" || echo "HEALTH CHECK FAILED"
+          curl -fsS --max-time 15 "$MARKET_DATA_URL/health" || echo "HEALTH CHECK FAILED"
           echo
           echo "== / (root status) =="
-          curl -fsS --max-time 15 "${{ inputs.market_data_url }}/" || echo "ROOT STATUS CHECK FAILED"
+          curl -fsS --max-time 15 "$MARKET_DATA_URL/" || echo "ROOT STATUS CHECK FAILED"
           echo
 
       - name: Universe equality against Psygrid's live GitHub source
@@ -40,8 +53,6 @@ jobs:
             --psygrid-url https://raw.githubusercontent.com/zahidshaikmohammed-cmyk/Psygrid/main/stocks.json
 
       - name: MarketDataAdapter direct validation (observations, freshness, 990 coverage)
-        env:
-          MARKET_DATA_URL: ${{ inputs.market_data_url }}
         run: |
           python - <<'PYEOF'
           import os
@@ -82,12 +93,12 @@ jobs:
       - name: Run psygridevents --once against live Psygrid market data
         continue-on-error: true
         run: |
-          python -m psygridevents.main --once --limit 25 --market-data psygrid --market-data-url "${{ inputs.market_data_url }}"
+          python -m psygridevents.main --once --limit 25 --market-data psygrid --market-data-url "$MARKET_DATA_URL"
 
       - name: Run psygridevents --once --json against live Psygrid market data
         continue-on-error: true
         run: |
-          python -m psygridevents.main --once --json --market-data psygrid --market-data-url "${{ inputs.market_data_url }}" > live_payload.json
+          python -m psygridevents.main --once --json --market-data psygrid --market-data-url "$MARKET_DATA_URL" > live_payload.json
           python -m json.tool live_payload.json | head -c 6000
 
       - name: Upload full JSON payload
