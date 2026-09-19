@@ -1,0 +1,99 @@
+name: Live Oracle/Psygrid validation (manual, read-only)
+
+# Manually triggered validation of psygridevents' CP8-CP11 pipeline against
+# the actual live Oracle Psygrid deployment. This is intentionally
+# read-only: it only issues HTTP GET requests against Psygrid's public
+# endpoints from the GitHub-hosted runner (which has ordinary internet
+# access, unlike some restricted development sandboxes) and never writes to
+# Oracle or to this repository's main branch.
+on:
+  workflow_dispatch:
+    inputs:
+      market_data_url:
+        description: "Psygrid base URL to validate against"
+        required: false
+        default: "http://140.245.226.102:10000"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e ".[test]"
+
+      - name: Psygrid reachability and root status
+        run: |
+          echo "== /health =="
+          curl -fsS --max-time 15 "${{ inputs.market_data_url }}/health" || echo "HEALTH CHECK FAILED"
+          echo
+          echo "== / (root status) =="
+          curl -fsS --max-time 15 "${{ inputs.market_data_url }}/" || echo "ROOT STATUS CHECK FAILED"
+          echo
+
+      - name: Universe equality against Psygrid's live GitHub source
+        run: |
+          python tools/verify_universe_against_psygrid.py \
+            --psygrid-url https://raw.githubusercontent.com/zahidshaikmohammed-cmyk/Psygrid/main/stocks.json
+
+      - name: MarketDataAdapter direct validation (observations, freshness, 990 coverage)
+        env:
+          MARKET_DATA_URL: ${{ inputs.market_data_url }}
+        run: |
+          python - <<'PYEOF'
+          import os
+          from datetime import datetime, timezone
+
+          from psygridevents.market_data import PsygridMarketDataAdapter
+          from psygridevents.universe import load_instruments
+
+          base_url = os.environ["MARKET_DATA_URL"]
+          adapter = PsygridMarketDataAdapter(base_url)
+          now = datetime.now(timezone.utc)
+          instruments = load_instruments()
+          print(f"Configured universe: {len(instruments)} instruments")
+
+          for symbol in ("RELIANCE", "HDFCBANK", "TCS"):
+              observations = adapter.observations(symbol, as_of=now)
+              diag = adapter.last_diagnostics.get(symbol)
+              print(f"\n{symbol}: {len(observations)} observation(s)")
+              print(f"  diagnostics: {diag}")
+              if observations:
+                  latest = observations[-1]
+                  print(f"  latest: timestamp={latest.timestamp.isoformat()} "
+                        f"open={latest.open} high={latest.high} low={latest.low} "
+                        f"close={latest.close} volume={latest.volume} "
+                        f"vwap={latest.vwap} benchmark_return={latest.benchmark_return} "
+                        f"sector_return={latest.sector_return}")
+              fresh = adapter.freshness(symbol, as_of=now, max_age_seconds=120)
+              print(f"  freshness: {fresh}")
+              assert all(o.timestamp <= now for o in observations), "REAL-TIME BOUNDARY VIOLATED"
+
+          print("\n== 990-universe coverage (single /public/live.json fetch) ==")
+          coverage = adapter.universe_coverage(instruments, as_of=now)
+          print(coverage)
+          print(f"configured={coverage.configured} resolved_security_ids={coverage.resolved_security_ids} "
+                f"live_data_received={coverage.live_data_received} stale={coverage.stale} missing={coverage.missing}")
+          PYEOF
+
+      - name: Run psygridevents --once against live Psygrid market data
+        continue-on-error: true
+        run: |
+          python -m psygridevents.main --once --limit 25 --market-data psygrid --market-data-url "${{ inputs.market_data_url }}"
+
+      - name: Run psygridevents --once --json against live Psygrid market data
+        continue-on-error: true
+        run: |
+          python -m psygridevents.main --once --json --market-data psygrid --market-data-url "${{ inputs.market_data_url }}" > live_payload.json
+          python -m json.tool live_payload.json | head -c 6000
+
+      - name: Upload full JSON payload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-validation-payload
+          path: live_payload.json
+          if-no-files-found: ignore
