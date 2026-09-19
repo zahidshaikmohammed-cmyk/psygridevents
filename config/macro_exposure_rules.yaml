@@ -13,7 +13,7 @@ version: "1.0.0"
 # This file is the explicit, fail-closed macro fallback: it is used ONLY when
 # an event resolves NO configured instrument at all. It never selects an
 # individual stock. The "asset" values below are sector/index representations,
-# not entries in the canonical 450-instrument universe (config/instruments.json)
+# not entries in the canonical 990-instrument universe (config/instruments.json)
 # and are never written into it. They are heuristic labels for exposure
 # reporting, not verified tradable identifiers, and mappings carry reduced
 # confidence to reflect that they are not anchored to a specific issuer.

@@ -69,7 +69,7 @@ Provider research and activation policy live in `docs/PROVIDER_RESEARCH.md`, `co
 
 ## Initial universe
 
-The repository monitors the supplied 450-instrument universe. The canonical symbols live in `config/instruments.json` and are treated as configuration/data, not scattered constants.
+The repository monitors a 990-instrument universe. `zahidshaikmohammed-cmyk/Psygrid`'s `stocks.json` is the single canonical owner of this universe; `config/instruments.json` is a synced, provenance-stamped mirror of it (never hand-edited), validated on every load against the same strict contract Psygrid enforces on itself (exactly 990 unique, well-formed symbols) and rejected — never silently downgraded — if that contract is not met. See `docs/UNIVERSE_INTEGRATION.md` for the sync/verification mechanism and tools.
 
 ## Acquisition → intelligence pipeline
 
@@ -84,7 +84,7 @@ Conservative deduplication
       ↓
 Evolving story clustering
       ↓
-450-instrument entity resolution
+990-instrument entity resolution
       ↓
 Evidence / corroboration assessment
       ↓

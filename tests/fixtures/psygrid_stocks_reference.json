@@ -1,14 +1,8 @@
 {
-  "version": "2.0.0",
+  "universe": "PSYGRID_990",
   "exchange": "NSE",
-  "canonical_source": {
-    "repo": "zahidshaikmohammed-cmyk/Psygrid",
-    "path": "stocks.json",
-    "universe_id": "PSYGRID_990",
-    "commit": "484e482fc71a2a9e0f122f06d783925acb7c98d7",
-    "synced_at": "2026-09-19T07:39:22.165375+00:00"
-  },
-  "instruments": [
+  "instrument": "EQUITY",
+  "symbols": [
     "RELIANCE",
     "HDFCBANK",
     "ICICIBANK",

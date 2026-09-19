@@ -2,7 +2,7 @@
 
 ## Research objective
 
-The engine is not a headline reader. It must discover, verify, deduplicate, cluster, contextualize and rank events that can materially affect the configured 450-instrument NSE universe.
+The engine is not a headline reader. It must discover, verify, deduplicate, cluster, contextualize and rank events that can materially affect the configured 990-instrument NSE universe.
 
 The provider architecture therefore uses **source diversity with explicit roles** rather than choosing one vendor.
 

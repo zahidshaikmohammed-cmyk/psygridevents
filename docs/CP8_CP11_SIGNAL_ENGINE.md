@@ -35,7 +35,7 @@ therefore produced **no exposure at all**. `config/macro_exposure_rules.yaml`
 adds an explicit, event-type-scoped macro/sector fallback used *only* when no
 instrument was resolved. It never picks an individual stock; the "asset"
 values are sector/index labels, not entries in (or additions to) the
-canonical 450-instrument universe in `config/instruments.json`, and they
+canonical 990-instrument universe in `config/instruments.json`, and they
 carry reduced confidence because they are not anchored to a specific issuer.
 
 An unresolved issuer, a negated/non-asserted event, or an event type with no
