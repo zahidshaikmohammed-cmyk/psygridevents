@@ -1,0 +1,17 @@
+version: "1.0.0"
+
+# CP10 — live market response staging thresholds. These bands classify how far
+# an *aligned* price move has progressed since the event-time baseline. They
+# are deterministic configuration, not calibrated probabilities, and they are
+# deliberately combined with reversal/volume/time evidence in the CP9/CP10
+# exhaustion engine rather than used alone to call a move "exhausted".
+min_move_fraction: 0.002
+early_threshold_fraction: 0.010
+developing_threshold_fraction: 0.020
+late_threshold_fraction: 0.035
+
+# A retracement of this fraction from the best aligned displacement seen so
+# far marks a reversal (used for exhaustion, independent of raw magnitude).
+reversal_retracement_fraction: 0.40
+
+elevated_volume_ratio: 1.20

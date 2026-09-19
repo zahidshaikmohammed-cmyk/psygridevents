@@ -20,8 +20,17 @@ Each `ranked_events` entry contains:
 - `story_id`
 - `event`
 - `priority`
+- `signal` (schema `1.1+`, may be `null` when no signal was computed)
 
 The `priority` object preserves the score, class, model coverage, component scores, available factors, missing factors and reason. This prevents downstream consumers from losing the explanation for a ranking.
+
+The `signal` object is the CP11 event-driven signal contract (see
+`docs/CP8_CP11_SIGNAL_ENGINE.md`) and is deliberately independent of
+`priority`: `priority` answers "how important is this event", `signal`
+answers "is there currently a sufficiently supported early market
+opportunity". Each story in `stories` also carries its own
+`asset_mechanisms`, `event_timings`, `market_responses`, `exhaustions` and
+`signals` arrays (parallel to `events`) for full provenance.
 
 ## Provenance rules
 

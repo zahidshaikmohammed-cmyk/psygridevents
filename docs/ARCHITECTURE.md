@@ -60,17 +60,23 @@ The weights are configuration and will be versioned when calibrated against hist
 
 The delivery layer emits a stable top-level JSON object containing `schema_version`, `generated_at`, `engine`, `stories`, `ranked_events` and `summary`. Ranked entries contain the event and its exact priority assessment, including component scores, coverage, available/missing factors and explanation. Source provenance is retained while raw provider payloads are excluded.
 
+## CP8–CP11 event-driven signal engine
+
+See `docs/CP8_CP11_SIGNAL_ENGINE.md` for the full contract. In summary:
+CP8 (`asset_mechanism.py`, `direction.py`) maps a semantic event to the
+asset(s)/mechanism it implies; CP9 (`event_timing.py`) classifies pure event
+freshness; CP10 (`market_data.py`, `market_response.py`) stages the live
+market response under a strict real-time information boundary; the CP9+CP10
+composite (`exhaustion.py`) determines whether the move is still early or
+already spent; CP11 (`signal_engine.py`) combines all of it, plus the
+existing CP5 market confirmation and CP6 materiality, into one explicit
+`NO_SIGNAL/WATCH/EARLY_LONG/EARLY_SHORT/CONFIRMED/INVALIDATED/EXHAUSTED`
+signal that is deliberately independent of the CP6 priority score.
+
 ## Future modules
 
-1. Source adapters
-2. Semantic event extraction
-3. Entity/alias resolution
-4. Event clustering and story graphs
-5. Company-sector relationship graph
-6. Expectation/surprise engine
-7. Historical event retrieval
-8. Market-confirmation adapter
-9. Contradiction investigator
-10. Narrative state machine
-11. Alerting/API layer
-12. Historical evaluation and calibration
+1. Credentialed live market-data adapter (CP10 currently runs fail-closed with no observations)
+2. Verified NSE issuer-master ingestion (unlocks broader CP8 entity resolution)
+3. Historical replay/backtest validation of signal timing without future leakage
+4. Alerting/API layer
+5. Historical evaluation and calibration of the CP6 priority weights

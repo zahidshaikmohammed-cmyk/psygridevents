@@ -1,0 +1,13 @@
+version: "1.0.0"
+
+# CP9 — pure timing/novelty event-state thresholds. These are deterministic
+# configuration, not calibrated probabilities. They classify how fresh an
+# event still is; whether the market has actually started moving is a
+# separate question answered by CP10 (market response) and combined with
+# this state in the CP9/CP10 exhaustion engine.
+new_within_minutes: 15
+early_within_hours: 4
+developing_within_hours: 24
+late_within_hours: 72
+# Beyond late_within_hours with no other evidence, the event's own timing is
+# no longer a fresh opportunity -> "exhausted" from a pure timing standpoint.

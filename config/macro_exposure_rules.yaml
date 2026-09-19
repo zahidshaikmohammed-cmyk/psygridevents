@@ -1,0 +1,55 @@
+version: "1.0.0"
+
+# CP8 macro/sector fallback exposure.
+#
+# The existing exposure graph (config/exposure_rules.yaml) can only produce a
+# sector link by chaining through an instrument that was explicitly resolved
+# in the event text (instrument -> issuer sector -> channel). That means a
+# genuinely macro event with no named company (e.g. an RBI repo-rate decision)
+# never produces any exposure at all today, even though section 6.3 of the
+# signal-engine mandate requires a sector/index-level representation for such
+# events.
+#
+# This file is the explicit, fail-closed macro fallback: it is used ONLY when
+# an event resolves NO configured instrument at all. It never selects an
+# individual stock. The "asset" values below are sector/index representations,
+# not entries in the canonical 450-instrument universe (config/instruments.json)
+# and are never written into it. They are heuristic labels for exposure
+# reporting, not verified tradable identifiers, and mappings carry reduced
+# confidence to reflect that they are not anchored to a specific issuer.
+macro_channels:
+  central_bank:
+    - asset: "NIFTY FINANCIAL SERVICES"
+      asset_type: "index"
+      relationship: "financing_conditions"
+      mechanism: "policy_rate_to_credit_transmission"
+      horizon: "near_term"
+      confidence: 0.55
+  government_policy:
+    - asset: "NIFTY 50"
+      asset_type: "index"
+      relationship: "policy_scope"
+      mechanism: "policy_to_sector_economics"
+      horizon: "medium_term"
+      confidence: 0.40
+  regulation:
+    - asset: "NIFTY 50"
+      asset_type: "index"
+      relationship: "regulatory_scope"
+      mechanism: "regulation_to_compliance_or_business_model"
+      horizon: "medium_term"
+      confidence: 0.40
+  macro:
+    - asset: "NIFTY 50"
+      asset_type: "index"
+      relationship: "macro_exposure"
+      mechanism: "macro_release_to_demand_or_financial_conditions"
+      horizon: "medium_term"
+      confidence: 0.40
+  geopolitical:
+    - asset: "NIFTY 50"
+      asset_type: "index"
+      relationship: "trade_or_supply_exposure"
+      mechanism: "geopolitical_shock_to_trade_supply_or_risk"
+      horizon: "near_term"
+      confidence: 0.35

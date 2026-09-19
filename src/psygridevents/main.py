@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 from .delivery import build_intelligence_payload
+from .market_data import NullMarketDataAdapter
 from .provider_registry import build_rss_adapters, load_provider_specs
 from .story_engine import StoryEngine
 from .universe import load_instruments
@@ -21,7 +22,7 @@ def _load_feeds() -> list[dict]:
     return payload.get("feeds", [])
 
 
-def _print_ranked(ranked: list, limit: int) -> None:
+def _print_ranked(ranked: list, signal_by_event_id: dict, limit: int) -> None:
     print(f"Ranked intelligence events: {len(ranked)}")
     for item in ranked[: max(0, limit)]:
         print(
@@ -29,6 +30,23 @@ def _print_ranked(ranked: list, limit: int) -> None:
             f"class={item.priority_class} coverage={item.coverage:.0%}"
         )
         print(f"  {item.reason}")
+        signal = signal_by_event_id.get(item.event_id)
+        if signal is None:
+            continue
+        print(
+            f"  ASSET {signal.asset or 'unresolved'} ({signal.asset_type})  "
+            f"EVENT {signal.event_type}  MECHANISM {signal.transmission_mechanism or 'unsupported'}"
+        )
+        print(
+            f"  EXPECTED DIRECTION {signal.expected_direction}  "
+            f"EVENT STATE {signal.event_state}  MARKET RESPONSE {signal.market_response}  "
+            f"EXHAUSTION {signal.exhaustion_state}"
+        )
+        print(f"  SIGNAL {signal.signal_state} (confidence={signal.signal_strength_or_confidence:.2f})")
+        print(f"  TRIGGER {signal.trigger}")
+        print(f"  INVALIDATION {signal.invalidation}")
+        if signal.uncertainty:
+            print(f"  UNCERTAINTY {'; '.join(signal.uncertainty)}")
 
 
 def main() -> None:
@@ -74,10 +92,33 @@ def main() -> None:
     stories = engine.build_materiality(stories)
     stories = engine.build_prioritization(stories)
     ranked = engine.rank_prioritization(stories)
+
+    now = engine.now()
+    # CP10 requires a live/verified market-data source. None is credentialed
+    # in this environment, so the null adapter is used deliberately: it never
+    # fabricates an observation, which means every signal below can only ever
+    # be NO_SIGNAL/WATCH on the market-response dimension until a real
+    # verified feed is wired in (see docs/CP8_CP11_SIGNAL_ENGINE.md).
+    market_data = NullMarketDataAdapter()
+    stories = engine.build_asset_mechanism(stories)
+
+    market_observations: list = []
+    for story in stories:
+        for mappings in story.asset_mechanisms:
+            for mapping in mappings:
+                if mapping.resolved and mapping.asset:
+                    market_observations.extend(market_data.observations(mapping.asset, as_of=now))
+
+    stories = engine.build_market_confirmation(stories, market_observations)
+    stories = engine.build_event_timing(stories, as_of=now)
+    stories = engine.build_market_response(stories, market_observations, as_of=now)
+    stories = engine.build_exhaustion(stories)
+    stories = engine.build_signals(stories, as_of=now)
+
     payload = build_intelligence_payload(
         stories,
         ranked,
-        generated_at=engine.now(),
+        generated_at=now,
     )
 
     if args.json:
@@ -85,10 +126,11 @@ def main() -> None:
         return
 
     event_count = sum(len(item.semantic_events) for item in stories)
+    signal_by_event_id = {signal.event_id: signal for item in stories for signal in item.signals}
     print(f"Raw observations: {len(observations)}")
     print(f"Unique stories: {len(stories)}")
     print(f"Semantic event candidates: {event_count}")
-    _print_ranked(ranked, args.limit)
+    _print_ranked(ranked, signal_by_event_id, args.limit)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ from typing import Any, Iterable
 from .priority import PriorityAssessment
 from .story_engine import StoryIntelligence
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 
 def _jsonable(value: Any) -> Any:
@@ -47,6 +47,11 @@ def _story(item: StoryIntelligence) -> dict[str, Any]:
         "contradictions": _jsonable(item.contradictions),
         "market_confirmations": _jsonable(item.market_confirmations),
         "priorities": _jsonable(item.priorities),
+        "asset_mechanisms": _jsonable(item.asset_mechanisms),
+        "event_timings": _jsonable(item.event_timings),
+        "market_responses": _jsonable(item.market_responses),
+        "exhaustions": _jsonable(item.exhaustions),
+        "signals": _jsonable(item.signals),
     }
 
 
@@ -61,6 +66,13 @@ def build_intelligence_payload(
     Ranked entries contain the event plus its explainable priority assessment so
     consumers do not need to perform an implicit join across payload sections.
     Raw provider payloads are deliberately excluded.
+
+    Each ranked entry also carries its CP11 `signal` (when one was computed)
+    so a downstream consumer never has to re-derive the event-driven signal
+    state from the story-level detail. `signal_strength_or_confidence` is
+    intentionally independent of `priority.priority_score`: priority answers
+    "how important is this event", the signal answers "is there currently a
+    sufficiently supported early market opportunity".
     """
     stories = tuple(intelligence)
     ranked_items = tuple(ranked)
@@ -69,11 +81,17 @@ def build_intelligence_payload(
         for item in stories
         for event in item.semantic_events
     }
+    signal_by_event_id = {
+        signal.event_id: signal
+        for item in stories
+        for signal in item.signals
+    }
 
     ranked_events: list[dict[str, Any]] = []
     for priority in ranked_items:
         context = event_by_id.get(priority.event_id)
         entry: dict[str, Any] = {"priority": _jsonable(priority)}
+        entry["signal"] = _jsonable(signal_by_event_id.get(priority.event_id))
         if context is None:
             entry["event"] = None
             entry["story_id"] = None
@@ -93,5 +111,6 @@ def build_intelligence_payload(
             "story_count": len(stories),
             "event_count": sum(len(item.semantic_events) for item in stories),
             "ranked_event_count": len(ranked_items),
+            "signal_count": sum(len(item.signals) for item in stories),
         },
     }

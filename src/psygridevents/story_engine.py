@@ -6,17 +6,26 @@ from pathlib import Path
 from typing import Iterable
 
 from .acquisition import RSSAcquirer, RawObservation
+from .asset_mechanism import AssetMechanismEngine, AssetMechanismMapping
 from .clustering import StoryCluster, cluster_stories
 from .contradiction import ContradictionAssessment, ContradictionEngine
 from .deduplication import deduplicate
 from .entity_resolution import InstrumentResolver, EntityMatch
 from .evidence import EvidenceAssessment, assess_evidence
-from .market_confirmation import MarketConfirmationAssessment, MarketConfirmationEngine, MarketObservation
+from .event_timing import EventTimingAssessment, EventTimingEngine
+from .exhaustion import ExhaustionAssessment, ExhaustionEngine
+from .market_confirmation import (
+    MarketConfirmationAssessment,
+    MarketConfirmationEngine,
+    MarketObservation,
+)
+from .market_response import MarketResponseAssessment, MarketResponseEngine
 from .materiality import MaterialityEngine
 from .normalize import normalized_observation
 from .novelty import NoveltyEngine
 from .priority import PriorityAssessment, PriorityEngine
 from .semantic import SemanticEvent, SemanticExtractor
+from .signal_engine import SignalAssessment, SignalEngine
 from .transmission import TransmissionAssessment, TransmissionEngine
 
 
@@ -30,6 +39,11 @@ class StoryIntelligence:
     contradictions: tuple[ContradictionAssessment, ...] = ()
     market_confirmations: tuple[MarketConfirmationAssessment, ...] = ()
     priorities: tuple[PriorityAssessment, ...] = ()
+    asset_mechanisms: tuple[tuple[AssetMechanismMapping, ...], ...] = ()
+    event_timings: tuple[EventTimingAssessment, ...] = ()
+    market_responses: tuple[MarketResponseAssessment | None, ...] = ()
+    exhaustions: tuple[ExhaustionAssessment | None, ...] = ()
+    signals: tuple[SignalAssessment, ...] = ()
 
 
 class StoryEngine:
@@ -45,9 +59,19 @@ class StoryEngine:
         contradiction_rules_file: str | Path | None = None,
         market_confirmation_rules_file: str | Path | None = None,
         priority_rules_file: str | Path | None = None,
+        direction_rules_file: str | Path | None = None,
+        macro_exposure_rules_file: str | Path | None = None,
+        event_timing_rules_file: str | Path | None = None,
+        market_response_rules_file: str | Path | None = None,
+        issuer_records: tuple | None = None,
     ) -> None:
         self.acquirer = RSSAcquirer()
         self.resolver = InstrumentResolver.from_instrument_file(instrument_file)
+        if issuer_records:
+            # CP8: extend entity resolution with verified issuer names/aliases
+            # only. Unverified rows never enter resolution (see
+            # InstrumentResolver.from_issuer_records / IssuerMasterBuilder).
+            self.resolver = InstrumentResolver.from_issuer_records(issuer_records, self.resolver)
         config_dir = Path(instrument_file).parent
         if semantic_rules_file is None:
             semantic_rules_file = config_dir / "semantic_rules.yaml"
@@ -61,6 +85,14 @@ class StoryEngine:
             market_confirmation_rules_file = config_dir / "market_confirmation_rules.yaml"
         if priority_rules_file is None:
             priority_rules_file = config_dir / "priority_rules.yaml"
+        if direction_rules_file is None:
+            direction_rules_file = config_dir / "direction_rules.yaml"
+        if macro_exposure_rules_file is None:
+            macro_exposure_rules_file = config_dir / "macro_exposure_rules.yaml"
+        if event_timing_rules_file is None:
+            event_timing_rules_file = config_dir / "event_timing_rules.yaml"
+        if market_response_rules_file is None:
+            market_response_rules_file = config_dir / "market_response_rules.yaml"
         self.semantic_extractor = SemanticExtractor(semantic_rules_file)
         self.novelty_engine = NoveltyEngine()
         self.materiality_engine = MaterialityEngine(materiality_rules_file)
@@ -68,6 +100,16 @@ class StoryEngine:
         self.contradiction_engine = ContradictionEngine(contradiction_rules_file)
         self.market_confirmation_engine = MarketConfirmationEngine(market_confirmation_rules_file)
         self.priority_engine = PriorityEngine(priority_rules_file)
+        self.asset_mechanism_engine = AssetMechanismEngine(
+            exposure_rules_file,
+            direction_rules_file,
+            issuer_metadata_file,
+            macro_exposure_rules_file,
+        )
+        self.event_timing_engine = EventTimingEngine(event_timing_rules_file)
+        self.market_response_engine = MarketResponseEngine(market_response_rules_file)
+        self.exhaustion_engine = ExhaustionEngine()
+        self.signal_engine = SignalEngine()
 
     def acquire(self, feeds: list[dict], since: datetime | None = None) -> list[RawObservation]:
         observations: list[RawObservation] = []
@@ -210,6 +252,120 @@ class StoryEngine:
                 item.transmissions,
             )
             result.append(replace(item, priorities=priorities))
+        return result
+
+    def build_asset_mechanism(self, intelligence: list[StoryIntelligence]) -> list[StoryIntelligence]:
+        """CP8: attach the EVENT -> ASSET -> MECHANISM mapping(s) for each event."""
+        result: list[StoryIntelligence] = []
+        for item in intelligence:
+            mappings = self.asset_mechanism_engine.assess_many(item.semantic_events)
+            result.append(replace(item, asset_mechanisms=mappings))
+        return result
+
+    def build_event_timing(
+        self, intelligence: list[StoryIntelligence], *, as_of: datetime | None = None
+    ) -> list[StoryIntelligence]:
+        """CP9: attach the pure timing/novelty freshness state for each event."""
+        result: list[StoryIntelligence] = []
+        for item in intelligence:
+            timings = self.event_timing_engine.assess_many(item.semantic_events, as_of=as_of)
+            result.append(replace(item, event_timings=timings))
+        return result
+
+    def build_market_response(
+        self,
+        intelligence: list[StoryIntelligence],
+        market_observations: Iterable[MarketObservation],
+        *,
+        as_of: datetime | None = None,
+    ) -> list[StoryIntelligence]:
+        """CP10: stage the live/synchronized market response for each event's resolved asset.
+
+        Never fabricates an observation: an event whose asset is unresolved,
+        or for which no observation exists, receives `None` here rather than
+        a guessed response.
+        """
+        observations = tuple(market_observations)
+        result: list[StoryIntelligence] = []
+        for item in intelligence:
+            asset_mechanisms = item.asset_mechanisms or self.asset_mechanism_engine.assess_many(item.semantic_events)
+            responses: list[MarketResponseAssessment | None] = []
+            for event, mappings in zip(item.semantic_events, asset_mechanisms):
+                primary = AssetMechanismEngine.primary(mappings)
+                if primary is None or not primary.resolved or not primary.asset:
+                    responses.append(None)
+                    continue
+                responses.append(
+                    self.market_response_engine.assess(
+                        event_id=event.event_id,
+                        asset=primary.asset,
+                        event_time=event.event_time,
+                        expected_direction=primary.expected_direction,
+                        observations=observations,
+                        as_of=as_of,
+                    )
+                )
+            result.append(replace(item, asset_mechanisms=asset_mechanisms, market_responses=tuple(responses)))
+        return result
+
+    def build_exhaustion(self, intelligence: list[StoryIntelligence]) -> list[StoryIntelligence]:
+        """CP9+CP10 composite: is the event-driven move still early, or already spent?"""
+        result: list[StoryIntelligence] = []
+        for item in intelligence:
+            timings = item.event_timings or self.event_timing_engine.assess_many(item.semantic_events)
+            responses = item.market_responses or tuple(None for _ in item.semantic_events)
+            exhaustions = tuple(
+                self.exhaustion_engine.assess(timing, response)
+                for timing, response in zip(timings, responses, strict=True)
+            )
+            result.append(replace(item, event_timings=timings, exhaustions=exhaustions))
+        return result
+
+    def build_signals(
+        self, intelligence: list[StoryIntelligence], *, as_of: datetime | None = None
+    ) -> list[StoryIntelligence]:
+        """CP11: combine event/asset/mechanism/timing/market-response/exhaustion into a signal."""
+        result: list[StoryIntelligence] = []
+        for item in intelligence:
+            asset_mechanisms = item.asset_mechanisms or self.asset_mechanism_engine.assess_many(
+                item.semantic_events
+            )
+            timings = item.event_timings or self.event_timing_engine.assess_many(
+                item.semantic_events, as_of=as_of
+            )
+            responses = item.market_responses or tuple(None for _ in item.semantic_events)
+            exhaustions = item.exhaustions or tuple(
+                self.exhaustion_engine.assess(timing, response)
+                for timing, response in zip(timings, responses, strict=True)
+            )
+            confirmations = item.market_confirmations or tuple(None for _ in item.semantic_events)
+            zipped = zip(
+                item.semantic_events, asset_mechanisms, timings, responses, exhaustions, confirmations,
+                strict=True,
+            )
+            signals = [
+                self.signal_engine.assess(
+                    event,
+                    story_id=item.story.cluster_id,
+                    asset_mapping=AssetMechanismEngine.primary(mappings),
+                    timing=timing,
+                    response=response,
+                    exhaustion=exhaustion,
+                    confirmation=confirmation,
+                    as_of=as_of,
+                )
+                for event, mappings, timing, response, exhaustion, confirmation in zipped
+            ]
+            result.append(
+                replace(
+                    item,
+                    asset_mechanisms=asset_mechanisms,
+                    event_timings=timings,
+                    market_responses=responses,
+                    exhaustions=exhaustions,
+                    signals=tuple(signals),
+                )
+            )
         return result
 
     def rank_prioritization(self, intelligence: list[StoryIntelligence]) -> list[PriorityAssessment]:

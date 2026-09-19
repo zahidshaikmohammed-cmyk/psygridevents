@@ -95,10 +95,12 @@ def test_payload_has_stable_top_level_contract():
         "story_count": 1,
         "event_count": 1,
         "ranked_event_count": 1,
+        "signal_count": 0,
     }
     assert payload["ranked_events"][0]["priority"]["event_id"] == "evt-1"
     assert payload["ranked_events"][0]["event"]["event_id"] == "evt-1"
     assert payload["ranked_events"][0]["story_id"] == "story-000001"
+    assert payload["ranked_events"][0]["signal"] is None
 
 
 def test_payload_serializes_datetime_and_does_not_expose_raw_provider_payload():

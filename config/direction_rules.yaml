@@ -1,0 +1,18 @@
+version: "1.0.0"
+
+# CP8/CP9/CP11 shared expected-direction classification.
+# These patterns classify only documented effect polarity already present in the
+# semantic event (trigger + extracted effects). They are not sentiment analysis
+# and they never infer direction from price action, which belongs to CP10/CP5.
+positive_patterns:
+  - "\\b(increase|increased|increases|rises|rose|higher|gain|gains|gained|wins|won|awarded|award|approved|approval|growth|expansion|expand|expanded|upgrade|upgraded|beat|beats|surge|surged|strong|positive|upside|benefit|beneficial)\\b"
+  - "\\b(order win|contract win|profit up|revenue up|margin up|capacity expansion)\\b"
+
+negative_patterns:
+  - "\\b(decrease|decreased|decreases|falls|fell|lower|loss|losses|cancelled|canceled|rejected|rejection|decline|declined|cut|cuts|shutdown|downgrade|downgraded|miss|misses|penalty|weak|negative|downside|contraction|contracted)\\b"
+  - "\\b(order loss|contract loss|profit down|revenue down|margin down|production cut)\\b"
+
+policy:
+  direction_is_evidence_based_only: true
+  neutral_or_ambiguous_language_never_forced_into_a_side: true
+  price_action_is_not_used_to_infer_expected_direction: true
