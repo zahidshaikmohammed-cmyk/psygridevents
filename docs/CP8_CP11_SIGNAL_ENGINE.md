@@ -165,17 +165,21 @@ exposes `asset_mechanisms`, `event_timings`, `market_responses`,
 STATE/SIGNAL/TRIGGER/INVALIDATION block per ranked event when a signal was
 computed.
 
-## Known limitation: no live market-data credentials
+## Live market data
 
-`main.py` wires `NullMarketDataAdapter` because no credentialed/live market
-feed is available in this environment. This is intentional fail-closed
-behavior, not a placeholder silently masking a shortcut: every signal
-produced by a real `--once` run today can only ever be `NO_SIGNAL` (asset
-unresolved, since `config/issuer_aliases.yaml` has not yet been populated
-from a verified NSE source) or `WATCH` (asset resolved directly by ticker
-mention, but no market response evidence exists). `EARLY_LONG`/`EARLY_SHORT`/
-`CONFIRMED`/`INVALIDATED`/`EXHAUSTED` are fully implemented and covered by
-`tests/test_signal_pipeline.py` against synthetic-but-realistic observation
-data; they require wiring a real `MarketDataAdapter` (and, for stronger
-entity resolution, a verified issuer master file) to be observed on live
-data.
+`main.py` now wires `PsygridMarketDataAdapter` by default, which consumes
+`zahidshaikmohammed-cmyk/Psygrid`'s own live JSON contract instead of a
+second, independent Dhan integration. `NullMarketDataAdapter` remains
+available (`--market-data none`) as the explicit fail-closed choice for
+tests/offline use. See `docs/LIVE_MARKET_DATA_INTEGRATION.md` for the full
+design, the freshness/real-time-boundary rules, and the current status of
+live validation (this development environment has no network route to the
+Oracle host, so the fail-closed path has been verified for real against
+that exact unreachability, but live data content has not yet been
+validated against a reachable instance during market hours).
+
+Entity resolution for a company event still depends on
+`config/issuer_aliases.yaml`, which remains empty until an operator
+ingests a verified NSE source file (see `docs/UNIVERSE_INTEGRATION.md`);
+until then, only events that name a configured symbol directly (not a
+company name) resolve to an asset.

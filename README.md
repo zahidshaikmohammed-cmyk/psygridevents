@@ -156,7 +156,11 @@ Priority uses eight configured dimensions: source confidence, novelty, surprise,
 
 ### CP8–CP11 event-driven signal engine
 
-The engine does not stop at ranking importance. For every semantic event it also asks: which configured asset (instrument, sector, or index) does this imply, through what documented mechanism, in what expected direction (CP8); how fresh is the event and is a repeated/repackaged story ever treated as a new opportunity (CP9); has the market actually started reacting, obeying a strict real-time information boundary (CP10); and is that reaction still early/developing or already exhausted (CP9+CP10)? CP11 combines all of this — plus the existing CP5 market-confirmation and CP6 materiality — into one explicit `NO_SIGNAL / WATCH / EARLY_LONG / EARLY_SHORT / CONFIRMED / INVALIDATED / EXHAUSTED` signal, independent of the CP6 priority score, with an explicit trigger, invalidation condition, evidence and uncertainty. See `docs/CP8_CP11_SIGNAL_ENGINE.md` for the full contract, including the current limitation that no credentialed live market-data feed is wired in yet (`NullMarketDataAdapter` is used, so it never fabricates a market observation).
+The engine does not stop at ranking importance. For every semantic event it also asks: which configured asset (instrument, sector, or index) does this imply, through what documented mechanism, in what expected direction (CP8); how fresh is the event and is a repeated/repackaged story ever treated as a new opportunity (CP9); has the market actually started reacting, obeying a strict real-time information boundary (CP10); and is that reaction still early/developing or already exhausted (CP9+CP10)? CP11 combines all of this — plus the existing CP5 market-confirmation and CP6 materiality — into one explicit `NO_SIGNAL / WATCH / EARLY_LONG / EARLY_SHORT / CONFIRMED / INVALIDATED / EXHAUSTED` signal, independent of the CP6 priority score, with an explicit trigger, invalidation condition, evidence and uncertainty. See `docs/CP8_CP11_SIGNAL_ENGINE.md` for the full contract.
+
+### Live market data
+
+CP10's live market observations are consumed from `zahidshaikmohammed-cmyk/Psygrid`'s own public JSON contract (`/public/stock/{symbol}.json`, `/public/live.json`) rather than a second, independent Dhan integration — Psygrid already owns Dhan authentication, security-ID resolution, WebSocket ingestion and reconnect handling. `PsygridMarketDataAdapter` is the production default; `NullMarketDataAdapter` (never fabricates an observation) remains available for offline/CI use via `--market-data none`. See `docs/LIVE_MARKET_DATA_INTEGRATION.md` for the full design, freshness/real-time-boundary rules, and the current status of live validation against Oracle.
 
 ## Running
 
@@ -166,10 +170,16 @@ Run the package normally for diagnostics:
 python -m psygridevents.main
 ```
 
-Run the currently enabled verified first-party feeds once with human-readable ranking:
+Run the currently enabled verified first-party feeds once with human-readable ranking, consuming Psygrid's live market data by default:
 
 ```bash
 python -m psygridevents.main --once
+```
+
+Run without live market data (fail-closed, offline/CI):
+
+```bash
+python -m psygridevents.main --once --market-data none
 ```
 
 Emit the machine-readable delivery contract:
@@ -184,12 +194,18 @@ Limit human-readable ranked output:
 python -m psygridevents.main --once --limit 10
 ```
 
+Run continuously, polling for new events/market state and printing only signal changes:
+
+```bash
+python -m psygridevents.main --watch --interval 60
+```
+
 No API keys are stored in the repository. Licensed providers remain disabled until credentials and entitlements are supplied.
 
 ## Status
 
-**CP11 — Event-driven signal engine implemented.** The repository has the semantic/event foundation, explicit transmission, novelty/materiality/contradiction context, synchronized market confirmation, deterministic eight-factor prioritization, a versioned production-facing JSON/CLI delivery boundary, and the CP8–CP11 event → asset → mechanism → timing → live market response → exhaustion → signal chain, all with regression coverage.
+**CP11 — Event-driven signal engine implemented, now wired to live Psygrid market data.** The repository has the semantic/event foundation, explicit transmission, novelty/materiality/contradiction context, synchronized market confirmation, deterministic eight-factor prioritization, a versioned production-facing JSON/CLI delivery boundary, the CP8–CP11 event → asset → mechanism → timing → live market response → exhaustion → signal chain, a 990-instrument universe synced from and verified against Psygrid's canonical source, and a production `MarketDataAdapter` that consumes Psygrid's live feed — all with regression coverage.
 
-The one dependency this cannot self-certify in an offline/sandboxed environment is a credentialed live market-data feed: `main.py` runs with a fail-closed `NullMarketDataAdapter`, so a real `--once` run today can only produce `NO_SIGNAL`/`WATCH`, never a fabricated directional signal. `EARLY_LONG`/`EARLY_SHORT`/`CONFIRMED`/`INVALIDATED`/`EXHAUSTED` are fully implemented and covered by tests against synthetic-but-realistic market data (`tests/test_signal_pipeline.py`), and are exercised for real once a live `MarketDataAdapter` is wired in.
+This session has no network route to the Oracle production host, so live validation against a reachable Psygrid instance during NSE market hours has not been performed; the fail-closed path (Psygrid unreachable → `WATCH`/`NO_SIGNAL`, never a fabricated signal) has been verified for real against that exact unreachability. See `docs/LIVE_MARKET_DATA_INTEGRATION.md` for the full status and remaining validation step.
 
 Next: wire a credentialed live market-data adapter and a verified NSE issuer-master source, then run historical replay validation (CP: timing/leakage evaluation) rather than adding opaque scoring layers.
