@@ -1,0 +1,29 @@
+[Unit]
+Description=PSYGRIDEVENTS event-to-price intelligence engine
+Documentation=https://github.com/zahidshaikmohammed-cmyk/psygridevents
+After=network-online.target psygrid.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/psygridevents
+EnvironmentFile=/etc/psygridevents.env
+ExecStart=/home/ubuntu/psygridevents/.venv/bin/python -m psygridevents.main --serve
+Restart=always
+RestartSec=5
+# Graceful shutdown: SIGTERM -> finish cycle, persist, close DB.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+# Keep the engine small on Always Free shapes (Psygrid runs on the same VM).
+MemoryMax=700M
+Nice=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=psygridevents
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -20,3 +20,9 @@ data/cache/
 # per-deployment runtime state, not source.
 .psygridevents_state.json
 .psygridevents_state.json.tmp
+
+# Production service database, WAL files and backups (never committed).
+data/*.sqlite3
+data/*.sqlite3-wal
+data/*.sqlite3-shm
+data/backups/

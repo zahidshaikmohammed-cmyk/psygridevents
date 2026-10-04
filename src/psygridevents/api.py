@@ -6,6 +6,7 @@ an API request can never block or corrupt signal generation.
 """
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import threading
@@ -72,7 +73,8 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:4px 6px;b
 const pct=v=>v==null?'n/a':(v*100).toFixed(2)+'%';
 async function load(){
  try{
-  const [t,p,s]=await Promise.all([fetch('signals/top').then(r=>r.json()),fetch('providers').then(r=>r.json()),fetch('system/status').then(r=>r.json())]);
+  const q=location.search||'';
+  const [t,p,s]=await Promise.all([fetch('signals/top'+q).then(r=>r.json()),fetch('providers'+q).then(r=>r.json()),fetch('system/status'+q).then(r=>r.json())]);
   document.getElementById('meta').textContent=`phase ${s.phase} · market ${s.market_health} · updated ${t.generated_at||'-'}`;
   const top=document.getElementById('top');top.innerHTML='';
   if(!t.signals.length){top.innerHTML='<div class=card>No signal currently clears the quality threshold.</div>'}
@@ -90,7 +92,8 @@ load();setInterval(load,15000);
 
 class ApiServer:
     def __init__(self, host: str, port: int, published: Published, store: Store,
-                 liveness: Callable[[], dict[str, Any]]) -> None:
+                 liveness: Callable[[], dict[str, Any]], *, token: str | None = None) -> None:
+        self.token = token
         self.published = published
         self.store = store
         self.liveness = liveness
@@ -192,6 +195,19 @@ class ApiServer:
             def do_GET(self) -> None:  # noqa: N802
                 parts = urlsplit(self.path)
                 path = parts.path.rstrip("/") or "/"
+                if server.token and path != "/health":
+                    supplied = (parse_qs(parts.query).get("token") or [""])[0]
+                    header = self.headers.get("Authorization", "")
+                    if header.startswith("Bearer "):
+                        supplied = header[7:]
+                    if not hmac.compare_digest(supplied, server.token):
+                        data = b'{"error":"unauthorized"}'
+                        self.send_response(401)
+                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Content-Length", str(len(data)))
+                        self.end_headers()
+                        self.wfile.write(data)
+                        return
                 try:
                     status, body, content_type = server.route(path, parse_qs(parts.query))
                 except Exception as exc:  # noqa: BLE001

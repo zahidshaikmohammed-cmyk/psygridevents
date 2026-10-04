@@ -1,0 +1,8 @@
+# NSE equity trading holidays (IST dates). Copy them from the official NSE
+# holiday circular for the year (https://www.nseindia.com/resources/exchange-communication-holidays).
+# They are intentionally NOT guessed here. Weekends are always non-trading.
+# On any weekday not listed, the live PSYGRID feed remains the final authority:
+# if no fresh candles arrive, market data is reported STALE/CLOSED and no
+# live signal can be produced.
+holidays: []
+#  - {date: 2026-10-20, name: "Example - replace with the official list"}

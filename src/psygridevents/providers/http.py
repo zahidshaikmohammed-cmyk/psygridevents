@@ -55,40 +55,49 @@ class SourceHttpClient:
             limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
         )
         self._validators: dict[str, tuple[str | None, str | None]] = {}
-        self._robots: dict[str, tuple[float, urllib.robotparser.RobotFileParser | None]] = {}
+        self._robots: dict[str, tuple[float, str, urllib.robotparser.RobotFileParser | None]] = {}
         self._robots_lock = asyncio.Lock()
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def _robots_for(self, url: str) -> urllib.robotparser.RobotFileParser | None:
+    async def _robots_for(self, url: str) -> tuple[str, urllib.robotparser.RobotFileParser | None]:
+        """RFC 9309 semantics.
+
+        200      -> parse and obey the rules (cached 24h)
+        4xx      -> "unavailable": no restrictions apply (cached 24h)
+        5xx/network error -> "unreachable": complete disallow for now (cached 10 min,
+                    surfaced as a transient source error, not a permanent block)
+        """
         parts = urlsplit(url)
         origin = f"{parts.scheme}://{parts.netloc}"
         async with self._robots_lock:
             cached = self._robots.get(origin)
-            if cached and time.monotonic() - cached[0] < 24 * 3600:
-                return cached[1]
-            parser: urllib.robotparser.RobotFileParser | None = None
+            if cached and time.monotonic() < cached[0]:
+                return cached[1], cached[2]
             try:
                 response = await self._client.get(f"{origin}/robots.txt")
-                if response.status_code == 200 and len(response.content) < 500_000:
-                    parser = urllib.robotparser.RobotFileParser()
-                    parser.parse(response.text.splitlines())
-                elif response.status_code in (401, 403):
-                    # RFC 9309: an inaccessible robots.txt means "disallow all".
-                    parser = urllib.robotparser.RobotFileParser()
-                    parser.parse(["User-agent: *", "Disallow: /"])
             except httpx.HTTPError:
-                parser = None  # unreachable robots.txt -> no restriction can be read; do not cache long
-                self._robots[origin] = (time.monotonic() - 23 * 3600, None)
-                return None
-            self._robots[origin] = (time.monotonic(), parser)
-            return parser
+                self._robots[origin] = (time.monotonic() + 600, "unreachable", None)
+                return "unreachable", None
+            if response.status_code == 200 and len(response.content) < 500_000:
+                parser = urllib.robotparser.RobotFileParser()
+                parser.parse(response.text.splitlines())
+                result = ("rules", parser)
+                ttl = 24 * 3600
+            elif 400 <= response.status_code < 500:
+                result, ttl = ("unavailable", None), 24 * 3600
+            else:
+                result, ttl = ("unreachable", None), 600
+            self._robots[origin] = (time.monotonic() + ttl, *result)
+            return result
 
     async def allowed(self, url: str) -> bool:
         if not self.respect_robots:
             return True
-        parser = await self._robots_for(url)
+        state, parser = await self._robots_for(url)
+        if state == "unreachable":
+            raise SourceError(f"robots.txt for {url} is unreachable; not fetching until it can be read")
         if parser is None:
             return True
         return parser.can_fetch(self.user_agent, url)

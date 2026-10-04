@@ -54,4 +54,7 @@ jobs:
           git fetch origin main
           git checkout -B main origin/main
           git reset --hard origin/main
+          # Install/upgrade the virtualenv and (re)start the systemd service.
+          # Idempotent; keeps /etc/psygridevents.env and the SQLite database.
+          bash deploy/install_oracle.sh
           REMOTE

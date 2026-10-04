@@ -358,7 +358,8 @@ class ServiceRuntime:
                  len(self.universe), len(self.registry.sources), restored, self.settings.market.psygrid_base_url,
                  self.store.path)
         if with_api:
-            self.api = ApiServer(self.settings.api_host, self.settings.api_port, self.published, self.store, self.liveness)
+            self.api = ApiServer(self.settings.api_host, self.settings.api_port, self.published, self.store, self.liveness,
+                                 token=self.settings.api_token)
             self.api.start()
         self.publish()
         try:

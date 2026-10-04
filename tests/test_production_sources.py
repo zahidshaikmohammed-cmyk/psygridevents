@@ -235,3 +235,21 @@ def test_persisted_provider_history_survives_restart():
 def test_sources_file_has_no_duplicate_ids(path):
     specs = load_source_specs(Path(__file__).resolve().parents[1] / path)
     assert len({item.id for item in specs}) == len(specs)
+
+
+def test_robots_txt_follows_rfc_9309():
+    async def check(robots_response):
+        http = client({"https://good.invalid/robots.txt": robots_response,
+                       "https://good.invalid/feed.xml": httpx.Response(200, content=GOOD)})
+        try:
+            return await http.allowed("https://good.invalid/feed.xml")
+        except Exception as exc:  # noqa: BLE001
+            return type(exc).__name__
+        finally:
+            await http.aclose()
+
+    assert run(check(httpx.Response(403))) is True       # 4xx: no restrictions
+    assert run(check(httpx.Response(404))) is True
+    assert run(check(httpx.Response(503))) == "SourceError"  # 5xx: transient complete disallow
+    assert run(check(httpx.ConnectError("x"))) == "SourceError"
+    assert run(check(httpx.Response(200, text="User-agent: test-agent\nDisallow: /feed.xml"))) is False

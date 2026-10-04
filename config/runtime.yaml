@@ -1,0 +1,52 @@
+# PSYGRIDEVENTS production runtime configuration.
+# Every value here can be left at its default. Environment variables (see
+# .env.example) override the most commonly changed ones. Credentials are
+# NEVER placed in this file.
+
+data_dir: data                    # SQLite database + backups live here (relative to repo root)
+api_host: 127.0.0.1               # use 0.0.0.0 only with PSYGRIDEVENTS_API_TOKEN set (or tunnel over SSH)
+api_port: 10100
+log_level: INFO
+log_json: true
+source_default_poll_seconds: 120
+source_off_hours_poll_multiplier: 5
+source_timeout_seconds: 15
+observation_retention_days: 45    # raw payloads pruned after this; titles/urls/events kept forever
+story_window_hours: 72
+recent_event_memory_hours: 168
+
+session:                          # IST
+  pre_market_start: "08:00"
+  market_open: "09:15"
+  no_new_entries_after: "15:00"   # NEAR_CLOSE: no NEW aggressive entries after this time
+  market_close: "15:30"
+  post_market_end: "16:30"
+
+market:
+  psygrid_base_url: "http://140.245.226.102:10000"   # override with PSYGRID_BASE_URL (use http://127.0.0.1:10000 on the Psygrid VM)
+  psygrid_timeout_seconds: 10
+  fetch_mode: shards              # 22 x /public/live-{a..v}.json per minute; "full" = /public/live.json
+  max_data_age_seconds: 150       # a completed 1m candle older than this is STALE
+  fetch_index_context: true       # /public/nifty.json + /public/indiavix.json
+  fetch_sector_context: true      # /public/sectors.json (hourly)
+  loop_interval_seconds: 60
+  loop_offset_seconds: 6          # run 6s after each minute so the previous candle is complete
+
+signals:
+  top_n: 5
+  min_opportunity_score: 60       # only signals at/above this are exposed in TOP 1-5
+  watch_min_score: 35
+  rank_swap_margin: 4             # a challenger must beat an incumbent by this many points
+  alert_cooldown_minutes: 15
+  min_state_dwell_minutes: 2
+  max_candidate_age_hours: 30
+  max_event_age_for_entry_hours: 6
+  second_order_discount: 0.75
+  discovery_only_max_score: 55
+  multiple_event_bonus: 3
+
+ai:
+  enabled: false                  # optional; set PSYGRIDEVENTS_AI_ENABLED=1 + ANTHROPIC_API_KEY
+  model: claude-opus-5-5
+  max_calls_per_day: 200
+  min_materiality_score: 0.6

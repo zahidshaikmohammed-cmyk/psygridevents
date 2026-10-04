@@ -111,6 +111,7 @@ class Settings:
     instruments_file: Path = CONFIG_DIR / "instruments.json"
     api_host: str = "127.0.0.1"
     api_port: int = 10100
+    api_token: str | None = None
     log_level: str = "INFO"
     log_json: bool = True
     http_user_agent: str = "PSYGRIDEVENTS/1.0 (+event-intelligence; contact: operator)"
@@ -139,7 +140,7 @@ class Settings:
                 result = {}
                 for item in fields(value):
                     raw = getattr(value, item.name)
-                    if item.name in {"bot_token", "api_key"}:
+                    if item.name in {"bot_token", "api_key", "api_token"}:
                         result[item.name] = "***" if raw else None
                     elif item.name == "chat_id":
                         result[item.name] = "***" if raw else None
@@ -207,6 +208,7 @@ def load_settings(path: Path | None = None, env: dict[str, str] | None = None) -
         settings = replace(settings, api_host=env["PSYGRIDEVENTS_API_HOST"])
     if env.get("PSYGRIDEVENTS_API_PORT"):
         settings = replace(settings, api_port=int(env["PSYGRIDEVENTS_API_PORT"]))
+    settings = replace(settings, api_token=env.get("PSYGRIDEVENTS_API_TOKEN") or None)
     if env.get("PSYGRIDEVENTS_LOG_LEVEL"):
         settings = replace(settings, log_level=env["PSYGRIDEVENTS_LOG_LEVEL"].upper())
     if env.get("PSYGRIDEVENTS_LOG_JSON"):

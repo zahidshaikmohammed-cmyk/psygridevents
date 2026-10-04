@@ -182,3 +182,21 @@ def test_signal_text_format_and_telegram_failure_is_isolated():
 
     asyncio.run(go())
     assert channel.failures == 1 and channel.sent == 0
+
+
+def test_optional_api_token_protects_everything_but_health(tmp_path):
+    from psygridevents.api import ApiServer, Published
+    from psygridevents.storage import Store
+
+    api = ApiServer("127.0.0.1", 0, Published(), Store(tmp_path / "x.sqlite3"),
+                    lambda: {"status": "OK"}, token="s3cret")
+    api.start()
+    port = api.httpd.server_address[1]
+    try:
+        assert _get(port, "/health")[0] == 200
+        with pytest.raises(urllib.error.HTTPError) as excinfo:
+            _get(port, "/signals/top")
+        assert excinfo.value.code == 401
+        assert _get(port, "/signals/top?token=s3cret")[0] == 200
+    finally:
+        api.stop()
