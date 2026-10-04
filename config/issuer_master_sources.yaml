@@ -8,6 +8,8 @@ sources:
     tier: 0
     purpose: "symbol/company/ISIN/security-code/series verification"
     official_page: "https://www.nseindia.com/static/market-data/securities-available-for-trading"
+    # Official NSE equity list (SYMBOL, NAME OF COMPANY, SERIES, ..., ISIN NUMBER).
+    csv_url: "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
     required_fields: [symbol, company_name, isin]
   nse_company_name_changes:
     publisher: "NSE"
@@ -26,6 +28,8 @@ sources:
     tier: 0
     purpose: "macro-sector/sector/industry/basic-industry classification"
     official_page: "https://www.nseindia.com/static/products-services/industry-classification"
+    # Official NIFTY 500 constituent list (Company Name, Industry, Symbol, Series, ISIN Code).
+    csv_url: "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv"
     required_fields: [symbol, sector, industry, basic_industry]
 
 policy:

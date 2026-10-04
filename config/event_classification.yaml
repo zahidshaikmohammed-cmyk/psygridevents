@@ -1,0 +1,169 @@
+version: "1.0.0"
+
+# Deterministic India-equity event classification (rules first, no LLM).
+#
+# Each rule: subtype -> event_type (one of the canonical CP types used by
+# semantic/materiality/exposure), a default documented direction for the
+# DIRECTLY affected issuer, the confidence of that default, a base
+# materiality (0..1, heuristic, NOT a probability) and the expected horizon.
+#
+# Rules are evaluated in order; the first matching rule per "family" wins and
+# up to 2 subtypes are kept. `routine` rules mark disclosures that are almost
+# never price-moving (trading-window closures, newspaper ads, certificates) so
+# they are kept as evidence but never become signals.
+#
+# `factor`/`factor_direction` are used for commodity/macro/policy events with
+# no single issuer: the exposure graph maps the factor move to sensitive
+# stocks (config/exposure_graph.yaml). Direction words such as up/down are
+# taken only from the source text.
+
+rules:
+  # --------------------------------------------------------------- routine noise
+  - {subtype: routine_disclosure, event_type: corporate, direction: neutral, direction_confidence: 0.9, materiality: 0.03, horizon: none, routine: true,
+     pattern: "(?i)(closure of trading window|trading window|newspaper (advertisement|publication)|compliance certificate|reg(ulation)?\\.? ?74|loss of share certificate|duplicate share certificate|issue of duplicate|annual general meeting|\\bAGM\\b|\\bEGM\\b|postal ballot|book closure|record date|\\bESOP|\\bESOS|transcript of|audio recording|investor (meet|presentation)|analyst(s)?\\s*/?\\s*institutional investor|schedule of analyst|change in registrar|statement of deviation|secretarial (audit|compliance)|certificate under|intimation of (the )?(record date|book closure)|updates? on (the )?(investor|analyst))"}
+
+  # --------------------------------------------------------------- orders
+  - {subtype: order_cancellation, event_type: order, direction: negative, direction_confidence: 0.75, materiality: 0.55, horizon: near_term,
+     pattern: "(?i)(cancell?ation|terminat\\w+|withdraw\\w*|foreclos\\w+)\\b.{0,50}\\b(order|contract|LoA)\\b"}
+  - {subtype: order_win, event_type: order, direction: positive, direction_confidence: 0.8, materiality: 0.6, horizon: near_term,
+     pattern: "(?i)(\\b(bag(s|ged|ging)?|receiv(es|ed|ing)|win(s|ning)?|won|secur(es|ed|ing)|award(ed|s)?|grabs?|bagging)\\b.{0,60}\\b(order|orders|contract|contracts|LoA|letter of award|letter of acceptance|work order|purchase order)\\b|receipt of (an? )?(new )?(order|contract|LoA)|award of (order|contract)|bagging of order|order win|new orders? worth)"}
+
+  # --------------------------------------------------------------- capital actions
+  - {subtype: buyback, event_type: capital_action, direction: positive, direction_confidence: 0.7, materiality: 0.6, horizon: near_term,
+     pattern: "(?i)\\bbuy[- ]?back\\b"}
+  - {subtype: bonus_issue, event_type: capital_action, direction: positive, direction_confidence: 0.55, materiality: 0.45, horizon: near_term,
+     pattern: "(?i)\\bbonus (issue|shares|equity)\\b"}
+  - {subtype: stock_split, event_type: capital_action, direction: positive, direction_confidence: 0.5, materiality: 0.35, horizon: near_term,
+     pattern: "(?i)(\\b(stock|share) split\\b|sub-?division of (equity )?shares)"}
+  - {subtype: dividend, event_type: capital_action, direction: positive, direction_confidence: 0.45, materiality: 0.3, horizon: immediate,
+     pattern: "(?i)(\\b(interim|final|special) dividend\\b|declar\\w+ (of )?(a )?dividend)"}
+  - {subtype: fund_raise, event_type: capital_action, direction: mixed, direction_confidence: 0.4, materiality: 0.45, horizon: near_term,
+     pattern: "(?i)(\\bQIP\\b|qualified institutions? placement|preferential (issue|allotment)|rights issue|fund[- ]?rais\\w+|raise (funds|capital)|issue of (warrants|NCDs?|non-convertible))"}
+  - {subtype: promoter_stake_sale, event_type: capital_action, direction: negative, direction_confidence: 0.55, materiality: 0.5, horizon: immediate,
+     pattern: "(?i)(offer for sale|\\bOFS\\b|stake sale|promoters? (to )?(sell|sold|offload\\w*|divest\\w*)|block deal|bulk deal|large (block|trade))"}
+  - {subtype: pledge_invocation, event_type: capital_action, direction: negative, direction_confidence: 0.7, materiality: 0.6, horizon: immediate,
+     pattern: "(?i)(invocation of pledge|pledge.{0,30}invok\\w+)"}
+  - {subtype: pledge_release, event_type: capital_action, direction: positive, direction_confidence: 0.45, materiality: 0.35, horizon: near_term,
+     pattern: "(?i)(release of pledge|pledge (released|revoked)|revocation of pledge)"}
+  - {subtype: pledge_creation, event_type: capital_action, direction: negative, direction_confidence: 0.4, materiality: 0.3, horizon: near_term,
+     pattern: "(?i)(creation of pledge|pledge(d)? (created|increased)|encumbrance)"}
+  - {subtype: insider_buy, event_type: capital_action, direction: positive, direction_confidence: 0.45, materiality: 0.35, horizon: near_term,
+     pattern: "(?i)(promoters?|promoter group|insiders?|director)\\b.{0,50}\\b(acqui\\w+|bought|buys?|purchas\\w+|increas\\w+ stake)"}
+
+  # --------------------------------------------------------------- results / business updates
+  - {subtype: results_positive, event_type: earnings, direction: positive, direction_confidence: 0.7, materiality: 0.7, horizon: near_term,
+     pattern: "(?i)((net )?profit|PAT|EBITDA|revenue|sales|earnings|margin)s? (rises?|rose|jumps?|jumped|surges?|surged|soars?|soared|climbs?|climbed|up|increases?|increased|grows?|grew|doubles?|doubled|beats?)\\b|beats? (street |analyst )?(estimates|expectations)|record (quarterly )?(profit|revenue)|swings? to (a )?profit"}
+  - {subtype: results_negative, event_type: earnings, direction: negative, direction_confidence: 0.7, materiality: 0.7, horizon: near_term,
+     pattern: "(?i)((net )?profit|PAT|EBITDA|revenue|sales|earnings|margin)s? (falls?|fell|declines?|declined|drops?|dropped|slumps?|slumped|plunges?|plunged|down|decreases?|decreased|shrinks?|shrank|misses?)\\b|miss(es|ed)? (street |analyst )?(estimates|expectations)|loss widens|swings? to (a )?loss|reports? (a )?(net )?loss"}
+  - {subtype: results_filed, event_type: earnings, direction: unknown, direction_confidence: 0.0, materiality: 0.65, horizon: near_term,
+     pattern: "(?i)(financial results|quarterly results|\\bQ[1-4] ?(FY ?\\d{2,4} )?(results|earnings|numbers)\\b|results for the (quarter|period|half year|year) ended|un-?audited (standalone |consolidated )?(financial )?results|audited (standalone |consolidated )?(financial )?results|earnings release)"}
+  - {subtype: business_update_positive, event_type: operational, direction: positive, direction_confidence: 0.6, materiality: 0.5, horizon: near_term,
+     pattern: "(?i)((monthly|total|auto|vehicle|domestic) sales|volumes?|deliveries|dispatches|AUM|loan book|deposits|disbursements?)\\b.{0,30}\\b(rise|rises|rose|grow|grows|grew|jump|jumps|jumped|up|increase|increased|surge|surged|record high)"}
+  - {subtype: business_update_negative, event_type: operational, direction: negative, direction_confidence: 0.6, materiality: 0.5, horizon: near_term,
+     pattern: "(?i)((monthly|total|auto|vehicle|domestic) sales|volumes?|deliveries|dispatches|AUM|loan book|deposits|disbursements?)\\b.{0,30}\\b(fall|falls|fell|decline|declines|declined|drop|drops|dropped|down|decrease|decreased|slump|slumped)"}
+  - {subtype: business_update, event_type: operational, direction: unknown, direction_confidence: 0.0, materiality: 0.4, horizon: near_term,
+     pattern: "(?i)(business update|provisional (business|numbers|figures)|quarterly update|monthly (sales|business) (data|update|numbers))"}
+  - {subtype: guidance_raise, event_type: earnings, direction: positive, direction_confidence: 0.7, materiality: 0.65, horizon: medium_term,
+     pattern: "(?i)(raises?|raised|upgrades?|upgraded|revises? up\\w*) (its )?(FY\\d* )?(guidance|outlook|forecast)"}
+  - {subtype: guidance_cut, event_type: earnings, direction: negative, direction_confidence: 0.7, materiality: 0.65, horizon: medium_term,
+     pattern: "(?i)(cuts?|lowers?|lowered|trims?|trimmed|revises? down\\w*|withdraws?) (its )?(FY\\d* )?(guidance|outlook|forecast)"}
+
+  # --------------------------------------------------------------- M&A / corporate structure
+  - {subtype: acquisition, event_type: merger_acquisition, direction: mixed, direction_confidence: 0.4, materiality: 0.6, horizon: medium_term,
+     pattern: "(?i)(\\bacqui(res|red|re|ring|sition)\\b|takeover|to buy .{0,30}stake|stake (purchase|acquisition)|share purchase agreement)"}
+  - {subtype: merger_demerger, event_type: merger_acquisition, direction: mixed, direction_confidence: 0.4, materiality: 0.55, horizon: medium_term,
+     pattern: "(?i)(\\bmerger\\b|amalgamation|demerger|scheme of arrangement|composite scheme)"}
+  - {subtype: divestment, event_type: merger_acquisition, direction: mixed, direction_confidence: 0.4, materiality: 0.5, horizon: medium_term,
+     pattern: "(?i)(divest\\w*|sale of (its )?(business|division|unit|subsidiary)|slump sale|monetis\\w+|monetiz\\w+)"}
+  - {subtype: competition_approval, event_type: regulation, direction: positive, direction_confidence: 0.55, materiality: 0.45, horizon: near_term,
+     pattern: "(?i)\\bCCI (approves|clears|nod|approval)|competition commission (approves|clears)"}
+
+  # --------------------------------------------------------------- ratings
+  - {subtype: credit_rating_upgrade, event_type: rating, direction: positive, direction_confidence: 0.6, materiality: 0.4, horizon: medium_term,
+     pattern: "(?i)(credit )?rating.{0,40}upgrad\\w+|upgrad\\w+.{0,40}(credit )?rating|outlook (revised|changed) to positive"}
+  - {subtype: credit_rating_downgrade, event_type: rating, direction: negative, direction_confidence: 0.65, materiality: 0.55, horizon: medium_term,
+     pattern: "(?i)(credit )?rating.{0,40}downgrad\\w+|downgrad\\w+.{0,40}(credit )?rating|outlook (revised|changed) to negative|rating watch with negative"}
+  - {subtype: broker_upgrade, event_type: rating, direction: positive, direction_confidence: 0.5, materiality: 0.35, horizon: near_term,
+     pattern: "(?i)\\bupgrades?\\b.{0,40}\\bto (buy|overweight|outperform|accumulate|add)\\b|initiates? .{0,30}with (a )?buy"}
+  - {subtype: broker_downgrade, event_type: rating, direction: negative, direction_confidence: 0.5, materiality: 0.35, horizon: near_term,
+     pattern: "(?i)\\bdowngrades?\\b.{0,40}\\bto (sell|underweight|underperform|reduce|neutral|hold)\\b"}
+
+  # --------------------------------------------------------------- regulatory / legal
+  - {subtype: usfda_adverse, event_type: regulation, direction: negative, direction_confidence: 0.75, materiality: 0.65, horizon: near_term,
+     pattern: "(?i)(warning letter|import alert|\\bOAI\\b|official action indicated|form ?483|observations? (issued|from) (the )?US ?FDA|US ?FDA (issues|issued) .{0,20}observations)"}
+  - {subtype: usfda_favourable, event_type: regulation, direction: positive, direction_confidence: 0.65, materiality: 0.55, horizon: near_term,
+     pattern: "(?i)(\\bEIR\\b|establishment inspection report|\\bVAI\\b|voluntary action indicated|(zero|nil|no) observations|US ?FDA (final |tentative )?approval|\\bANDA approval|approval from (the )?US ?FDA)"}
+  - {subtype: regulatory_penalty, event_type: regulation, direction: negative, direction_confidence: 0.65, materiality: 0.55, horizon: near_term,
+     pattern: "(?i)(\\bpenalty\\b|\\bfined\\b|imposes? (a )?fine|show[- ]cause notice|\\bdebarr\\w+|\\brestrain\\w*|adjudication order|interim order|settlement order|suspends? (trading|operations)|licen[cs]e (cancell?ed|suspended|revoked))"}
+  - {subtype: tax_demand, event_type: legal, direction: negative, direction_confidence: 0.45, materiality: 0.35, horizon: medium_term,
+     pattern: "(?i)(tax demand|GST demand|demand notice|income[- ]tax (order|demand|search|raid)|assessment order)"}
+  - {subtype: insolvency, event_type: legal, direction: negative, direction_confidence: 0.75, materiality: 0.7, horizon: medium_term,
+     pattern: "(?i)(\\binsolvency\\b|NCLT admits|\\bCIRP\\b|bankruptcy|liquidation proceedings|default(ed|s)? on (debt|interest|repayment|loan))"}
+  - {subtype: litigation_favourable, event_type: legal, direction: positive, direction_confidence: 0.6, materiality: 0.5, horizon: medium_term,
+     pattern: "(?i)((favourable|favorable) (order|judgment|judgement|ruling|award)|wins (case|arbitration|legal battle|appeal)|arbitration award in (its )?favou?r|quash\\w+ (the )?(order|demand))"}
+  - {subtype: litigation_adverse, event_type: legal, direction: negative, direction_confidence: 0.6, materiality: 0.5, horizon: medium_term,
+     pattern: "(?i)((adverse|unfavourable|unfavorable) (order|judgment|judgement|ruling)|loses (case|arbitration|appeal)|dismiss\\w+ (its|the company'?s) (appeal|petition))"}
+
+  # --------------------------------------------------------------- management / operations
+  - {subtype: key_management_exit, event_type: management, direction: negative, direction_confidence: 0.55, materiality: 0.45, horizon: near_term,
+     pattern: "(?i)(\\b(resign\\w*|steps? down|quits?|cessation)\\b.{0,50}\\b(CEO|MD|managing director|CFO|chairman|chairperson|whole[- ]time director|chief executive|chief financial)\\b|\\b(CEO|MD|CFO|chairman)\\b.{0,30}\\b(resign\\w*|steps? down|quits?)\\b)"}
+  - {subtype: key_management_appointment, event_type: management, direction: mixed, direction_confidence: 0.3, materiality: 0.3, horizon: medium_term,
+     pattern: "(?i)appoint\\w*.{0,50}\\b(CEO|MD|managing director|CFO|chairman|chief executive)\\b"}
+  - {subtype: operational_disruption, event_type: operational, direction: negative, direction_confidence: 0.7, materiality: 0.55, horizon: near_term,
+     pattern: "(?i)(\\bfire\\b|explosion|\\bblast\\b|\\bstrike\\b|lock-?out|plant shut\\w*|shut\\s?down|production (halt\\w*|suspend\\w*|disrupt\\w*)|cyber[- ]?(attack|security incident)|ransomware|accident at|operations (suspended|halted))"}
+  - {subtype: capacity_addition, event_type: operational, direction: positive, direction_confidence: 0.55, materiality: 0.45, horizon: medium_term,
+     pattern: "(?i)(commission(ing|ed) of|commences? commercial (production|operations)|capacity expansion|new (plant|facility|unit) (commissioned|operational)|\\bCOD\\b|commercial operation date|capex (plan|of))"}
+
+  # --------------------------------------------------------------- central bank / macro
+  - {subtype: rate_cut, event_type: central_bank, direction: positive, direction_confidence: 0.7, materiality: 0.75, horizon: near_term, factor: policy_rate, factor_direction: down,
+     pattern: "(?i)((repo|policy|benchmark|interest) rate.{0,40}\\b(cut|cuts|reduc\\w+|lower\\w*)\\b|\\b(cuts?|reduces?|lowers?)\\b.{0,20}(repo|policy|benchmark|interest) rate)"}
+  - {subtype: rate_hike, event_type: central_bank, direction: negative, direction_confidence: 0.7, materiality: 0.75, horizon: near_term, factor: policy_rate, factor_direction: up,
+     pattern: "(?i)((repo|policy|benchmark|interest) rate.{0,40}\\b(hike\\w*|rais\\w+|increas\\w+)\\b|\\b(hikes?|raises?)\\b.{0,20}(repo|policy|benchmark|interest) rate)"}
+  - {subtype: rate_hold, event_type: central_bank, direction: neutral, direction_confidence: 0.6, materiality: 0.4, horizon: near_term, factor: policy_rate, factor_direction: unchanged,
+     pattern: "(?i)((keeps?|holds?|retains?|leaves?|maintains?)\\b.{0,30}(repo|policy|benchmark|interest) rate.{0,30}unchanged|status quo on (the )?(repo|policy) rate|(repo|policy) rate unchanged)"}
+  - {subtype: liquidity_easing, event_type: central_bank, direction: positive, direction_confidence: 0.55, materiality: 0.55, horizon: near_term, factor: liquidity, factor_direction: up,
+     pattern: "(?i)((CRR|cash reserve ratio).{0,30}(cut|reduc\\w+|lower\\w*)|liquidity infusion|OMO purchase|open market purchase)"}
+  - {subtype: inflation_release, event_type: macro, direction: unknown, direction_confidence: 0.0, materiality: 0.45, horizon: near_term, factor: inflation,
+     pattern: "(?i)(\\bCPI\\b|retail inflation|\\bWPI\\b|wholesale (price )?inflation|consumer price index)"}
+  - {subtype: growth_release, event_type: macro, direction: unknown, direction_confidence: 0.0, materiality: 0.4, horizon: near_term, factor: growth,
+     pattern: "(?i)(\\bGDP\\b|gross domestic product|\\bIIP\\b|index of industrial production|\\bPMI\\b|core sector)"}
+  - {subtype: fed_decision, event_type: macro, direction: unknown, direction_confidence: 0.0, materiality: 0.5, horizon: near_term, factor: us_rates,
+     pattern: "(?i)(\\bFOMC\\b|Federal Reserve|\\bthe Fed\\b|Fed (chair|rate))"}
+
+  # --------------------------------------------------------------- government policy / trade
+  - {subtype: export_restriction, event_type: government_policy, direction: mixed, direction_confidence: 0.5, materiality: 0.6, horizon: near_term,
+     pattern: "(?i)((ban|prohibit\\w*|restrict\\w*|curb\\w*)\\b.{0,30}\\bexports?\\b|\\bexport (ban|duty|curb|restriction|prohibition)|minimum export price|\\bMEP\\b)"}
+  - {subtype: export_relaxation, event_type: government_policy, direction: mixed, direction_confidence: 0.5, materiality: 0.55, horizon: near_term,
+     pattern: "(?i)(lift\\w*|remov\\w*|relax\\w*|scrap\\w*|withdraw\\w*)\\b.{0,30}\\bexport (ban|duty|curb|restriction)"}
+  - {subtype: import_protection, event_type: government_policy, direction: mixed, direction_confidence: 0.55, materiality: 0.6, horizon: medium_term,
+     pattern: "(?i)((anti-?dumping|safeguard|countervailing) duty|import duty (hike|raised|increase\\w*)|(raises?|hikes?|imposes?) (basic )?customs duty|minimum import price)"}
+  - {subtype: incentive_scheme, event_type: government_policy, direction: positive, direction_confidence: 0.5, materiality: 0.5, horizon: medium_term,
+     pattern: "(?i)(\\bPLI\\b|production[- ]linked incentive|subsidy (scheme|hike|increase)|incentive scheme|cabinet approves .{0,60}(scheme|outlay|mission))"}
+  - {subtype: windfall_tax, event_type: government_policy, direction: mixed, direction_confidence: 0.5, materiality: 0.55, horizon: near_term, factor: windfall_tax,
+     pattern: "(?i)windfall (gains )?tax|special additional excise duty"}
+  - {subtype: gst_rate_change, event_type: government_policy, direction: mixed, direction_confidence: 0.45, materiality: 0.55, horizon: medium_term,
+     pattern: "(?i)(GST (rate )?(cut|hike|reduc\\w+|increas\\w+|rationali\\w+|revision)|GST Council (approves|decides|recommends))"}
+  - {subtype: tariff_action, event_type: geopolitical, direction: mixed, direction_confidence: 0.4, materiality: 0.55, horizon: near_term,
+     pattern: "(?i)(reciprocal tariffs?|tariffs? on (Indian|India)|trade (war|deal|agreement)|sanctions? on)"}
+
+  # --------------------------------------------------------------- commodities (factor moves, direction from text)
+  - {subtype: crude_up, event_type: commodity, direction: unknown, direction_confidence: 0.0, materiality: 0.5, horizon: near_term, factor: crude_oil, factor_direction: up,
+     pattern: "(?i)(crude|brent|\\bWTI\\b|oil prices?)\\b.{0,30}\\b(surge\\w*|jump\\w*|spike\\w*|soar\\w*|rall(y|ies|ied)|climb\\w*|rise|rises|rose|gain\\w*|hits? .{0,10}high)"}
+  - {subtype: crude_down, event_type: commodity, direction: unknown, direction_confidence: 0.0, materiality: 0.5, horizon: near_term, factor: crude_oil, factor_direction: down,
+     pattern: "(?i)(crude|brent|\\bWTI\\b|oil prices?)\\b.{0,30}\\b(plunge\\w*|slump\\w*|crash\\w*|tumble\\w*|fall|falls|fell|drop\\w*|slide\\w*|declin\\w*)"}
+  - {subtype: metals_up, event_type: commodity, direction: unknown, direction_confidence: 0.0, materiality: 0.45, horizon: near_term, factor: base_metals, factor_direction: up,
+     pattern: "(?i)(steel|aluminium|aluminum|copper|zinc|iron ore|metal) prices?\\b.{0,30}\\b(surge\\w*|jump\\w*|rise|rises|rose|soar\\w*|rall(y|ies|ied)|climb\\w*)"}
+  - {subtype: metals_down, event_type: commodity, direction: unknown, direction_confidence: 0.0, materiality: 0.45, horizon: near_term, factor: base_metals, factor_direction: down,
+     pattern: "(?i)(steel|aluminium|aluminum|copper|zinc|iron ore|metal) prices?\\b.{0,30}\\b(plunge\\w*|fall|falls|fell|drop\\w*|slump\\w*|declin\\w*|tumble\\w*)"}
+  - {subtype: rupee_weak, event_type: macro, direction: unknown, direction_confidence: 0.0, materiality: 0.4, horizon: near_term, factor: inr, factor_direction: down,
+     pattern: "(?i)rupee\\b.{0,30}\\b(falls?|fell|slump\\w*|weaken\\w*|record low|depreciat\\w+|hits? (a )?(record|all[- ]time) low)"}
+  - {subtype: rupee_strong, event_type: macro, direction: unknown, direction_confidence: 0.0, materiality: 0.35, horizon: near_term, factor: inr, factor_direction: up,
+     pattern: "(?i)rupee\\b.{0,30}\\b(rises?|rose|gains?|gained|strengthen\\w*|appreciat\\w+|rall(y|ies|ied))"}
+
+  # --------------------------------------------------------------- generic exchange disclosures
+  - {subtype: board_meeting_outcome, event_type: corporate, direction: unknown, direction_confidence: 0.0, materiality: 0.4, horizon: near_term,
+     pattern: "(?i)outcome of (the )?board meeting"}
+  - {subtype: board_meeting_intimation, event_type: corporate, direction: unknown, direction_confidence: 0.0, materiality: 0.15, horizon: near_term,
+     pattern: "(?i)((intimation|notice|prior intimation) of (the )?board meeting|board meeting (on|to (be held|consider))|board meeting intimation)"}
+  - {subtype: press_release, event_type: corporate, direction: unknown, direction_confidence: 0.0, materiality: 0.3, horizon: near_term,
+     pattern: "(?i)(press release|media release)"}

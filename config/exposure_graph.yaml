@@ -1,0 +1,160 @@
+version: "1.0.0"
+
+# 990-stock exposure / transmission graph (deterministic, fail-closed).
+#
+# Edges are only ever created from what is configured here plus the vendored
+# sector map (config/psygrid_sector_map.json) and official industry data in
+# the issuers table. Nothing is inferred from vague text. Every symbol is
+# validated against config/instruments.json at load (unknown ones dropped).
+#
+# Every produced exposure carries: relationship type, confidence, mechanism,
+# expected direction and materiality. Second-order exposures are discounted
+# and -- by policy in the opportunity layer -- can only become a signal when
+# the stock's OWN live market reaction independently confirms the move.
+#
+# Confidence values are configuration weights, not probabilities.
+
+# ------------------------------------------------------------------------ peer groups
+# Tight competitor sets (same products / customers). Used for COMPETITOR and
+# SECTOR exposure of company-specific events.
+peer_groups:
+  oil_marketing: [BPCL, HINDPETRO, IOC, CHENNPETRO]
+  upstream_oil_gas: [ONGC, OIL]
+  city_gas: [IGL, MGL, ATGL, GAIL, PETRONET]
+  paints: [ASIANPAINT, BERGEPAINT, KANSAINER, INDIGOPNTS]
+  tyres: [MRF, APOLLOTYRE, CEATLTD, JKTYRE, BALKRISIND]
+  aviation: [INDIGO]
+  steel: [TATASTEEL, JSWSTEEL, SAIL, JINDALSTEL, JSL]
+  aluminium: [HINDALCO, NATIONALUM, VEDL]
+  base_metals_mining: [HINDCOPPER, HINDZINC, VEDL, NMDC]
+  cement: [ULTRACEMCO, SHREECEM, AMBUJACEM, ACC, DALBHARAT, JKCEMENT, INDIACEM, HEIDELBERG, BIRLACORPN, JKLAKSHMI, NUVOCO, STARCEMENT, ORIENTCEM]
+  psu_banks: [SBIN, BANKBARODA, PNB, CANBK, BANKINDIA, INDIANB, CENTRALBK, IOB, MAHABANK]
+  private_banks: [HDFCBANK, ICICIBANK, AXISBANK, KOTAKBANK, INDUSINDBK, IDFCFIRSTB, FEDERALBNK, BANDHANBNK, RBLBANK, AUBANK, KARURVYSYA, CUB, DCBBANK, J&KBANK, SOUTHBANK, CSBBANK]
+  nbfc: [BAJFINANCE, BAJAJFINSV, CHOLAFIN, M&MFIN, LICHSGFIN, PNBHOUSING, MUTHOOTFIN, MANAPPURAM, POONAWALLA, ABCAPITAL, LTF, CANFINHOME, AAVAS, HOMEFIRST, CREDITACC, IIFL]
+  gold_finance: [MUTHOOTFIN, MANAPPURAM, IIFL]
+  housing_finance: [LICHSGFIN, PNBHOUSING, CANFINHOME, AAVAS, HOMEFIRST]
+  realty: [DLF, GODREJPROP, OBEROIRLTY, PRESTIGE, PHOENIXLTD, BRIGADE, LODHA, MAHLIFE, SUNTECK]
+  autos_pv: [MARUTI, M&M, TMPV]
+  autos_2w: [BAJAJ-AUTO, HEROMOTOCO, EICHERMOT, TVSMOTOR]
+  autos_cv: [ASHOKLEY, ESCORTS, FORCEMOT]
+  it_services: [TCS, INFY, WIPRO, HCLTECH, TECHM, LTM, PERSISTENT, COFORGE, MPHASIS, LTTS, OFSS]
+  pharma_generics_us: [SUNPHARMA, DRREDDY, CIPLA, LUPIN, AUROPHARMA, ZYDUSLIFE, TORNTPHARM, ALKEM, GLENMARK, IPCALAB, GRANULES, NATCOPHARM, LAURUSLABS, AJANTPHARM, BIOCON, DIVISLAB]
+  telecom: [BHARTIARTL, IDEA]
+  telecom_infra: [INDUSTOWER]
+  defence: [HAL, BEL, BDL, MAZDOCK, COCHINSHIP, GRSE, BEML, DATAPATTNS, ASTRAMICRO]
+  shipbuilding: [MAZDOCK, COCHINSHIP, GRSE]
+  power_generation: [NTPC, TATAPOWER, ADANIPOWER, NHPC, SJVN, JSWENERGY, TORNTPOWER, CESC]
+  power_finance: [PFC, RECLTD, IREDA]
+  capital_markets: [BSE, MCX, CDSL, CAMS, KFINTECH, ANGELONE, MOTILALOFS, IEX]
+  asset_managers: [HDFCAMC, NAM-INDIA, UTIAMC]
+  sugar: [BALRAMCHIN, EIDPARRY, BAJAJHIND]
+  rice_exporters: [KRBL, LTFOODS]
+  fmcg: [HINDUNILVR, ITC, NESTLEIND, BRITANNIA, DABUR, MARICO, GODREJCP, COLPAL, TATACONSUM, EMAMILTD]
+  railways: [IRFC, RVNL, IRCON, RAILTEL, TITAGARH, IRCTC, RITES]
+  solar_manufacturing: [WAAREEENER, PREMIERENE, BORORENEW]
+  agrochemicals: [UPL, PIIND, RALLIS, BAYERCROP]
+  life_insurance: [HDFCLIFE, ICICIPRULI, LICI]
+  general_insurance: [ICICIGI, GICRE]
+
+# Competitor edges are emitted for these event subtypes only (a company's
+# order win / USFDA action / plant fire can move its closest peers).
+competitor_rules:
+  # subtype: [peer expected direction relative to the issuer's own direction, confidence, materiality factor]
+  order_win: {relation: same, confidence: 0.35, materiality_factor: 0.35, mechanism: "sector_order_flow_read_through"}
+  results_positive: {relation: same, confidence: 0.35, materiality_factor: 0.35, mechanism: "peer_earnings_read_through"}
+  results_negative: {relation: same, confidence: 0.35, materiality_factor: 0.35, mechanism: "peer_earnings_read_through"}
+  guidance_raise: {relation: same, confidence: 0.4, materiality_factor: 0.4, mechanism: "peer_demand_read_through"}
+  guidance_cut: {relation: same, confidence: 0.4, materiality_factor: 0.4, mechanism: "peer_demand_read_through"}
+  business_update_positive: {relation: same, confidence: 0.35, materiality_factor: 0.3, mechanism: "peer_demand_read_through"}
+  business_update_negative: {relation: same, confidence: 0.35, materiality_factor: 0.3, mechanism: "peer_demand_read_through"}
+  operational_disruption: {relation: opposite, confidence: 0.3, materiality_factor: 0.3, mechanism: "competitor_supply_disruption_share_gain"}
+  usfda_adverse: {relation: same, confidence: 0.25, materiality_factor: 0.25, mechanism: "regulatory_scrutiny_sector_read_through"}
+  regulatory_penalty: {relation: same, confidence: 0.2, materiality_factor: 0.2, mechanism: "regulatory_scrutiny_sector_read_through"}
+
+# Explicit supplier / customer relationships. Only add an edge here when the
+# relationship is documented (annual report, exchange disclosure). Empty
+# lists are intentional: no edge is ever guessed.
+supply_chain:
+  # - {supplier: SYMBOL_A, customer: SYMBOL_B, confidence: 0.6, mechanism: "describe the documented dependency", evidence: "source/document"}
+  []
+
+# ------------------------------------------------------------------------ factor sensitivities
+# Factor move -> affected groups. `sign` is the stock's expected direction when
+# the factor goes UP (+1 benefits, -1 hurts). A DOWN move flips it. These are
+# well-established cost/revenue channels; confidence is deliberately modest.
+factor_sensitivities:
+  crude_oil:
+    - {groups: [upstream_oil_gas], sign: 1, confidence: 0.55, mechanism: "crude_price_to_upstream_realisation"}
+    - {groups: [oil_marketing], sign: -1, confidence: 0.5, mechanism: "crude_price_to_marketing_margin"}
+    - {groups: [paints], sign: -1, confidence: 0.45, mechanism: "crude_derivative_input_cost"}
+    - {groups: [tyres], sign: -1, confidence: 0.4, mechanism: "crude_derivative_input_cost"}
+    - {groups: [aviation], sign: -1, confidence: 0.5, mechanism: "jet_fuel_cost"}
+    - {groups: [city_gas], sign: -1, confidence: 0.3, mechanism: "energy_input_cost"}
+  base_metals:
+    - {groups: [steel, aluminium, base_metals_mining], sign: 1, confidence: 0.5, mechanism: "metal_price_to_realisation"}
+  policy_rate:
+    - {groups: [private_banks, psu_banks], sign: -1, confidence: 0.4, mechanism: "rate_path_to_credit_growth_and_valuation"}
+    - {groups: [nbfc, housing_finance], sign: -1, confidence: 0.5, mechanism: "rate_path_to_funding_cost"}
+    - {groups: [realty], sign: -1, confidence: 0.45, mechanism: "rate_path_to_housing_demand"}
+    - {groups: [autos_pv, autos_2w], sign: -1, confidence: 0.35, mechanism: "rate_path_to_vehicle_financing"}
+  liquidity:
+    - {groups: [private_banks, psu_banks, nbfc], sign: 1, confidence: 0.4, mechanism: "system_liquidity_to_funding"}
+  inr:
+    - {groups: [it_services], sign: -1, confidence: 0.35, mechanism: "rupee_strength_to_export_realisation"}
+    - {groups: [pharma_generics_us], sign: -1, confidence: 0.3, mechanism: "rupee_strength_to_export_realisation"}
+    - {groups: [oil_marketing], sign: 1, confidence: 0.3, mechanism: "rupee_strength_to_import_cost"}
+  windfall_tax:
+    - {groups: [upstream_oil_gas], sign: -1, confidence: 0.6, mechanism: "windfall_tax_to_upstream_earnings"}
+
+# Product keywords (from policy / trade events) -> producer groups.
+# import_protection: domestic producers benefit (+1).
+# export_restriction: producers/exporters are hurt (-1); export_relaxation: helped (+1).
+product_groups:
+  steel: [steel]
+  aluminium: [aluminium]
+  copper: [base_metals_mining]
+  zinc: [base_metals_mining]
+  sugar: [sugar]
+  rice: [rice_exporters]
+  basmati: [rice_exporters]
+  solar: [solar_manufacturing]
+  "solar cells": [solar_manufacturing]
+  "solar modules": [solar_manufacturing]
+  tyres: [tyres]
+  paint: [paints]
+  cement: [cement]
+  pharmaceutical: [pharma_generics_us]
+  agrochemical: [agrochemicals]
+  pesticide: [agrochemicals]
+
+policy_product_rules:
+  import_protection: {sign: 1, confidence: 0.5, mechanism: "trade_protection_to_domestic_pricing"}
+  export_restriction: {sign: -1, confidence: 0.5, mechanism: "export_curb_to_volume_and_realisation"}
+  export_relaxation: {sign: 1, confidence: 0.5, mechanism: "export_relaxation_to_volume_and_realisation"}
+  incentive_scheme: {sign: 1, confidence: 0.4, mechanism: "fiscal_incentive_to_sector_economics"}
+  gst_rate_change: {sign: 0, confidence: 0.3, mechanism: "indirect_tax_to_demand"}
+
+# ------------------------------------------------------------------------ regulators
+# Regulator keyword -> groups whose business the regulator directly governs.
+# Used for regulation events that do not name a specific issuer. Direction
+# comes from the event (e.g. "SEBI tightens F&O rules" -> negative).
+regulator_scope:
+  SEBI: {groups: [capital_markets, asset_managers], confidence: 0.4}
+  RBI: {groups: [private_banks, psu_banks, nbfc], confidence: 0.35}
+  IRDAI: {groups: [life_insurance, general_insurance], confidence: 0.45}
+  TRAI: {groups: [telecom, telecom_infra], confidence: 0.45}
+  DoT: {groups: [telecom, telecom_infra], confidence: 0.4}
+  CERC: {groups: [power_generation], confidence: 0.4}
+  DGCA: {groups: [aviation], confidence: 0.45}
+  USFDA: {groups: [pharma_generics_us], confidence: 0.25}
+  "Ministry of Defence": {groups: [defence], confidence: 0.4}
+  "Defence Acquisition Council": {groups: [defence], confidence: 0.45}
+  "Railway Board": {groups: [railways], confidence: 0.4}
+  "Ministry of Railways": {groups: [railways], confidence: 0.4}
+
+# Index-level macro channel when nothing more specific is known (kept from the
+# CP8 macro fallback; used only for context, never to signal 990 stocks).
+macro_index_channel:
+  central_bank: {asset: "NIFTY FINANCIAL SERVICES", confidence: 0.4}
+  macro: {asset: "NIFTY 50", confidence: 0.3}
+  geopolitical: {asset: "NIFTY 50", confidence: 0.3}
