@@ -1,8 +1,12 @@
 [Unit]
 Description=PSYGRIDEVENTS event-to-price intelligence engine
 Documentation=https://github.com/zahidshaikmohammed-cmyk/psygridevents
+# Ordering only: PSYGRID never depends on this service, and this one starts (and fails closed,
+# producing no market signals) even when PSYGRID is down.
 After=network-online.target psygrid.service
 Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=10
 
 [Service]
 Type=simple
@@ -12,18 +16,35 @@ WorkingDirectory=/home/ubuntu/psygridevents
 EnvironmentFile=/etc/psygridevents.env
 ExecStart=/home/ubuntu/psygridevents/.venv/bin/python -m psygridevents.main --serve
 Restart=always
-RestartSec=5
+RestartSec=15
 # Graceful shutdown: SIGTERM -> finish cycle, persist, close DB.
 KillSignal=SIGTERM
 TimeoutStopSec=30
-# Keep the engine small on Always Free shapes (Psygrid runs on the same VM).
-MemoryMax=700M
-Nice=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=psygridevents
+
+# PSYGRID (the market-data backbone) shares this VM. This service is strictly downstream: it only
+# reads PSYGRID over HTTP, and every limit below makes it lose any contest for CPU, I/O, memory,
+# processes or descriptors. Under memory pressure the kernel kills this process, never PSYGRID.
+Nice=10
+CPUWeight=20
+CPUQuota=80%
+IOSchedulingClass=idle
+IOWeight=10
+MemoryHigh=500M
+MemoryMax=700M
+OOMScoreAdjust=900
+TasksMax=128
+LimitNOFILE=4096
+
+# It can write only its own checkout (SQLite and backups live in data/); PSYGRID's files,
+# configuration and units are read-only to it.
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/psygridevents
 
 [Install]
 WantedBy=multi-user.target
