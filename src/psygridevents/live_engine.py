@@ -320,7 +320,12 @@ class LiveEngine:
         self.last_reactions = {}
 
         for event in list(self.events.values()):
-            if now - event.public_at > max_age or event.routine or event.roundup:
+            if event.routine or event.roundup:
+                continue
+            relation = self.calendar.event_session_relation(event.public_at, now)
+            if now - event.public_at > max_age and relation != "BEFORE_OPEN":
+                # Events published since the previous close (overnight, weekend, holiday)
+                # stay eligible for today's session regardless of wall-clock age.
                 continue
             exposures = [item for item in event.exposures if item.relationship == "DIRECT"]
             exposures += [item for item in event.exposures if item.relationship != "DIRECT"][: MAX_EXPOSURES_EVALUATED - len(exposures)]
@@ -390,7 +395,13 @@ class LiveEngine:
                     self.outcomes.note_state(old_key, INVALIDATED)
         self.direction_by_pair[(event.event_id, symbol)] = direction
 
-        timing = self.timing_engine.assess(event.semantic_event, as_of=now)
+        # Market-available clock: an event published outside market hours can only be
+        # reacted to from the next open, so freshness/timing is measured from there.
+        market_available_at = event.public_at
+        if relation == "BEFORE_OPEN":
+            market_available_at = max(event.public_at, datetime.fromtimestamp(open_epoch, tz=timezone.utc))
+        timing_event = replace(event.semantic_event, event_time=market_available_at)
+        timing = self.timing_engine.assess(timing_event, as_of=now)
         response = reaction.to_market_response(event.event_id, direction) if reaction is not None else None
         exhaustion = self.exhaustion_engine.assess(timing, response)
         confirmation = reaction.to_confirmation(event.event_id, direction) if reaction is not None else None
@@ -413,7 +424,7 @@ class LiveEngine:
             semantic, story_id=event.story_id, asset_mapping=mapping, timing=timing, response=response,
             exhaustion=exhaustion, confirmation=confirmation, as_of=now, market_session_state=market_state,
         )
-        age_hours = (now - event.public_at).total_seconds() / 3600.0
+        age_hours = max(0.0, (now - market_available_at).total_seconds() / 3600.0)
         score = score_opportunity(
             event, exposure, reaction, direction=direction, direction_confidence=direction_confidence,
             context=ScoreContext(phase=phase, regime=regime, event_age_hours=age_hours, settings=self.settings.signals),
@@ -422,7 +433,7 @@ class LiveEngine:
         proposed, policy_notes = self._policy_state(cp11.signal_state, event, exposure, reaction, score, phase, direction,
                                                     current.state if current else NO_SIGNAL)
         payload = self._signal_payload(event, exposure, reaction, score, cp11, proposed, direction, direction_confidence,
-                                       now, policy_notes, timing.state)
+                                       now, policy_notes, timing.state, market_available_at)
         transition = self.book.update(
             signal_key=signal_key, symbol=symbol, event_id=event.event_id, story_id=event.story_id,
             direction=direction, proposed_state=proposed, score=score.opportunity_score,
@@ -512,19 +523,21 @@ class LiveEngine:
     def _signal_payload(
         self, event: CanonicalEvent, exposure: Exposure, reaction: ReactionMetrics | None, score: OpportunityScore,
         cp11: Any, state: str, direction: str, direction_confidence: float, now: datetime, notes: list[str],
-        timing_state: str,
+        timing_state: str, market_available_at: datetime | None = None,
     ) -> dict[str, Any]:
         sign = 1.0 if direction == "positive" else -1.0 if direction == "negative" else 0.0
         trade_direction = "LONG" if sign > 0 else "SHORT" if sign < 0 else "NONE"
         event_age = (now - event.public_at).total_seconds()
+        market_available_at = market_available_at or event.public_at
+        market_available_age = max(0.0, (now - market_available_at).total_seconds())
         market_age = reaction.market_data_age_seconds if reaction else None
         if reaction is None or reaction.data_status in ("NO_DATA", "TIME_ERROR"):
             freshness_status = "NO_MARKET_DATA"
         elif reaction.data_status == "STALE":
             freshness_status = "STALE"
-        elif event_age <= 1800:
+        elif market_available_age <= 1800:
             freshness_status = "FRESH"
-        elif event_age <= 4 * 3600:
+        elif market_available_age <= 4 * 3600:
             freshness_status = "AGING"
         else:
             freshness_status = "OLD"
@@ -645,6 +658,8 @@ class LiveEngine:
                 "market_data_age_seconds": market_age,
                 "event_age_seconds": round(event_age, 1),
                 "event_age": _fmt_age(event_age),
+                "market_available_at": market_available_at.isoformat(),
+                "age_since_market_available": _fmt_age(market_available_age),
                 "freshness_status": freshness_status,
             },
             "mechanism": {

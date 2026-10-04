@@ -270,3 +270,31 @@ def test_threshold_keeps_low_quality_signals_out_of_top():
     _run(engine, [lt] + background_universe(engine, exclude={"LT"}), [62, 66, 70, 80])
     assert not engine.top
     assert state_of(engine, "LT") == "WATCH"
+
+
+def test_friday_evening_filing_is_still_fresh_at_monday_open():
+    engine = make_engine()
+    friday_evening = ist(18, 30, day=2)
+    obs = nse_filing("LT", "Larsen & Toubro Limited", "Bagging of Order", friday_evening,
+                     summary="Larsen & Toubro bags order worth Rs 4,000 crore")
+    event = engine.ingest([obs], friday_evening + timedelta(seconds=30))[0]
+    lt = Bars("LT", 3535, previous_close=3500, today_open=3535).move(0, 30, 0.0008, volume_mult=2.5)
+    _run(engine, [lt] + background_universe(engine, exclude={"LT"}), [3, 6, 10])
+    record = next(record for record in engine.book.records.values() if record.symbol == "LT")
+    payload = record.payload
+    assert payload["freshness"]["freshness_status"] == "FRESH"
+    assert payload["clocks"]["event_clock"]["session_relation"] == "BEFORE_OPEN"
+    assert "old_event" not in payload["risk_flags"]
+    assert record.state in ACTIONABLE
+    assert payload["event_time"] == event.public_at.isoformat()  # true public time is still reported
+
+
+def test_large_opening_gap_on_overnight_news_counts_as_already_priced():
+    engine = make_engine()
+    friday_evening = ist(18, 30, day=2)
+    engine.ingest([nse_filing("LT", "Larsen & Toubro Limited", "Bagging of Order", friday_evening,
+                              summary="Larsen & Toubro bags order worth Rs 4,000 crore")], friday_evening)
+    gapped = Bars("LT", 3650, previous_close=3500, today_open=3640).move(0, 30, 0.0006, volume_mult=2.0)
+    _run(engine, [gapped] + background_universe(engine, exclude={"LT"}), [3, 6, 10])
+    assert state_of(engine, "LT") == "EXHAUSTED"
+    assert not any(entry.symbol == "LT" for entry in engine.top)

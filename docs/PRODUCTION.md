@@ -91,6 +91,12 @@ Policy:
 | Market clock | `clocks.market_clock.reaction_start_at`, `event_to_price_latency_minutes` | When the stock started to react: the first bar beyond a volatility-scaled threshold, measured from the event baseline. |
 | Opportunity clock | `remaining_opportunity`, `exhaustion_state` | How much tradeable movement plausibly remains: extension versus the stock's own 1-minute range, retracement from peak, distance from VWAP, fading momentum, volume climax, late session. |
 
+**Market-available clock.** An event published outside market hours (overnight, weekend or
+holiday) can only be reacted to from the next open. Freshness, CP9 timing and the old-event
+penalty are therefore measured from that open (`freshness.market_available_at`), while
+`event_time` still reports the true public time. A Friday-evening filing is FRESH at Monday 09:15,
+not 63 hours stale.
+
 The baseline depends on when the event became public:
 
 * **During the session**: the last bar completed before the event.
