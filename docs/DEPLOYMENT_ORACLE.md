@@ -28,8 +28,8 @@ The installer is idempotent. It:
 2. creates `data/`;
 3. creates `/etc/psygridevents.env` from `.env.example`, mode 600, if it doesn't exist;
 4. installs and enables `deploy/psygridevents.service` and restarts it;
-5. adds a weekday cron entry for `deploy/backup_db.sh`;
-6. checks `/health`.
+5. installs and enables the `psygridevents-backup.timer` systemd timer (weekdays 16:45 IST, runs `deploy/backup_db.sh`);
+6. waits up to 60 s for `/health` and prints the service log if it never answers.
 
 ## 2. Configure
 

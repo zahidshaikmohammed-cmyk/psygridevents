@@ -247,7 +247,7 @@ schema.
 | `daily_diagnostics` | Post-close report: missed, false and late signals |
 | `kv` | Daily-routine markers, TOP list, issuer refresh time |
 
-Backup: `deploy/backup_db.sh` runs daily from cron, makes an online-consistent copy and keeps 14.
+Backup: `deploy/backup_db.sh` runs on weekdays from the `psygridevents-backup.timer` systemd timer, makes an online-consistent copy and keeps 14.
 
 ## 8. Restart recovery
 
