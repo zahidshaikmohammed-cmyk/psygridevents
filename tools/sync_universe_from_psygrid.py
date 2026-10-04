@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sync psygridevents' vendored instrument universe from canonical Psygrid.
 
-Psygrid (zahidshaikmohammed-cmyk/Psygrid) owns the live 990-stock universe in
+Psygrid (zahidshaikmohammed-cmyk/Psygrid) owns the live stock universe in
 its `stocks.json` (validated by Psygrid's own config.py and
 tests/test_universe_contract.py). psygridevents does not maintain an
 independent universe: this script is the ONLY place that updates
@@ -31,11 +31,11 @@ sys.path.insert(0, str(ROOT / "src"))
 from psygridevents.universe_integrity import (  # noqa: E402
     CanonicalUniverseUnavailableError,
     assert_universe_integrity,
+    expected_size_for_universe_id,
 )
 
 CANONICAL_REPO = "zahidshaikmohammed-cmyk/Psygrid"
 CANONICAL_SOURCE_PATH = "stocks.json"
-CANONICAL_UNIVERSE_ID = "PSYGRID_990"
 INSTRUMENTS_PATH = ROOT / "config" / "instruments.json"
 
 
@@ -73,13 +73,11 @@ def _git_commit(psygrid_path: Path | None) -> str:
         return "unknown"
 
 
-def _validate_canonical_payload(payload: dict) -> list[str]:
+def _validate_canonical_payload(payload: dict) -> tuple[str, int, list[str]]:
     if not isinstance(payload, dict):
         raise CanonicalUniverseUnavailableError("Psygrid stocks.json is not a JSON object")
-    if payload.get("universe") != CANONICAL_UNIVERSE_ID:
-        raise CanonicalUniverseUnavailableError(
-            f"expected universe={CANONICAL_UNIVERSE_ID!r}, got {payload.get('universe')!r}"
-        )
+    universe_id = str(payload.get("universe") or "")
+    expected = expected_size_for_universe_id(universe_id)
     if str(payload.get("exchange", "")).upper() != "NSE":
         raise CanonicalUniverseUnavailableError(f"expected exchange=NSE, got {payload.get('exchange')!r}")
     if str(payload.get("instrument", "")).upper() != "EQUITY":
@@ -87,7 +85,7 @@ def _validate_canonical_payload(payload: dict) -> list[str]:
     symbols = payload.get("symbols")
     if not isinstance(symbols, list) or not symbols:
         raise CanonicalUniverseUnavailableError("stocks.json contains no non-empty 'symbols' array")
-    return [str(symbol).strip().upper() for symbol in symbols]
+    return universe_id, expected, [str(symbol).strip().upper() for symbol in symbols]
 
 
 def sync(*, psygrid_path: Path | None, psygrid_url: str | None) -> None:
@@ -98,11 +96,11 @@ def sync(*, psygrid_path: Path | None, psygrid_url: str | None) -> None:
     else:
         raise CanonicalUniverseUnavailableError("neither --psygrid-path nor --psygrid-url was supplied")
 
-    symbols = _validate_canonical_payload(payload)
+    universe_id, expected, symbols = _validate_canonical_payload(payload)
     # Enforce the exact same fail-closed contract psygridevents itself will
     # later require via universe.load_instruments() -- reject here, before
     # ever writing the file, rather than after.
-    assert_universe_integrity(symbols)
+    assert_universe_integrity(symbols, expected_count=expected)
 
     commit = _git_commit(psygrid_path)
     existing = json.loads(INSTRUMENTS_PATH.read_text(encoding="utf-8")) if INSTRUMENTS_PATH.exists() else {}
@@ -112,7 +110,7 @@ def sync(*, psygrid_path: Path | None, psygrid_url: str | None) -> None:
         "canonical_source": {
             "repo": CANONICAL_REPO,
             "path": CANONICAL_SOURCE_PATH,
-            "universe_id": CANONICAL_UNIVERSE_ID,
+            "universe_id": universe_id,
             "commit": commit,
             "synced_at": datetime.now(timezone.utc).isoformat(),
         },

@@ -31,13 +31,13 @@ def _psygrid_reference_symbols() -> list[str]:
     return [str(symbol).strip().upper() for symbol in payload["symbols"]]
 
 
-def test_frozen_psygrid_reference_is_exactly_990_and_unique() -> None:
+def test_frozen_psygrid_reference_matches_its_declared_size_and_is_unique() -> None:
     symbols = _psygrid_reference_symbols()
     assert len(symbols) == EXPECTED_UNIVERSE_SIZE
     assert len(set(symbols)) == EXPECTED_UNIVERSE_SIZE
 
 
-def test_psygrid_universe_loads_and_has_exactly_990_instruments() -> None:
+def test_psygrid_universe_loads_with_exactly_the_declared_instrument_count() -> None:
     instruments = load_instruments()
     assert len(instruments) == EXPECTED_UNIVERSE_SIZE
     assert len(set(instruments)) == EXPECTED_UNIVERSE_SIZE
@@ -54,7 +54,7 @@ def test_canonical_source_provenance_is_recorded() -> None:
     source = document["canonical_source"]
     assert source["repo"] == "zahidshaikmohammed-cmyk/Psygrid"
     assert source["path"] == "stocks.json"
-    assert source["universe_id"] == "PSYGRID_990"
+    assert source["universe_id"] == f"PSYGRID_{EXPECTED_UNIVERSE_SIZE}"
     assert source["commit"]
     assert source["synced_at"]
 
@@ -113,7 +113,7 @@ def test_malformed_and_undersized_universe_fails_closed() -> None:
 
 
 def test_a_post_expansion_symbol_resolves_through_entity_resolution() -> None:
-    # ACGL was added when the universe expanded from 450 to 990; if it were
+    # ACGL was added when the universe expanded from 450 to 990 (now 989); if it were
     # only present in config/instruments.json but not actually wired through
     # to entity resolution, this would fail.
     assert "ACGL" in load_instruments()
@@ -126,3 +126,28 @@ def test_existing_450_era_symbols_still_resolve() -> None:
     resolver = InstrumentResolver.from_instrument_file(INSTRUMENTS_PATH)
     matches = resolver.resolve("Reliance Industries wins a major order")
     assert [match.instrument for match in matches] == ["RELIANCE"]
+
+
+def test_universe_id_declares_the_expected_size() -> None:
+    from psygridevents.universe_integrity import expected_size_for_universe_id
+
+    assert expected_size_for_universe_id("PSYGRID_989") == 989
+    assert expected_size_for_universe_id("PSYGRID_990") == 990
+
+
+def test_undersized_or_malformed_universe_id_fails_closed() -> None:
+    from psygridevents.universe_integrity import expected_size_for_universe_id
+
+    with pytest.raises(CanonicalUniverseUnavailableError):
+        expected_size_for_universe_id("PSYGRID_450")
+    with pytest.raises(CanonicalUniverseUnavailableError):
+        expected_size_for_universe_id("SOMETHING_ELSE")
+
+
+def test_file_whose_count_disagrees_with_its_declared_id_fails_closed(tmp_path) -> None:
+    document = json.loads(INSTRUMENTS_PATH.read_text(encoding="utf-8"))
+    document["instruments"] = document["instruments"][:-1]
+    path = tmp_path / "instruments.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(CanonicalUniverseUnavailableError):
+        load_instruments(path)

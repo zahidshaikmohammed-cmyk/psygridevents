@@ -1,17 +1,44 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 # Psygrid (zahidshaikmohammed-cmyk/Psygrid) is the canonical owner of the
-# live stock universe. Its own config.py hardcodes this exact value
-# (UNIVERSE_SIZE = 990) and its test suite
-# (tests/test_universe_contract.py::test_canonical_stock_universe_is_exactly_990_and_unique)
-# enforces it against stocks.json. psygridevents mirrors that same constant
-# here so a corrupted, reverted, or stale local universe file is rejected
-# deterministically -- never silently accepted as "close enough".
-EXPECTED_UNIVERSE_SIZE = 990
+# live stock universe. Its config.py hardcodes UNIVERSE_SIZE and its
+# stocks.json declares the matching universe id ("PSYGRID_<size>"); Psygrid
+# enforces that the symbol count equals that size. The size is not fixed
+# forever (Psygrid moved from PSYGRID_990 to PSYGRID_989 when HEG left the
+# list), so psygridevents derives the expected size from the universe id the
+# canonical file itself declares, exactly as Psygrid does, instead of
+# hard-coding a number that silently goes stale.
+#
+# EXPECTED_UNIVERSE_SIZE is the size of the universe currently vendored in
+# config/instruments.json (Psygrid commit 29d9b8d). MIN_CANONICAL_UNIVERSE_SIZE
+# is a floor that still rejects a reverted/partial file (for example the
+# historical 450-symbol universe) even if it carries a self-consistent id.
+EXPECTED_UNIVERSE_SIZE = 989
+MIN_CANONICAL_UNIVERSE_SIZE = 900
+CANONICAL_UNIVERSE_ID_PATTERN = re.compile(r"^PSYGRID_(\d+)$")
 
 CANONICAL_UNIVERSE_UNAVAILABLE = "CANONICAL_UNIVERSE_UNAVAILABLE"
+
+
+def expected_size_for_universe_id(universe_id: object) -> int:
+    """Return the symbol count a canonical universe id ("PSYGRID_989") declares.
+
+    Raises CanonicalUniverseUnavailableError for a missing/malformed id or a
+    declared size below MIN_CANONICAL_UNIVERSE_SIZE.
+    """
+    match = CANONICAL_UNIVERSE_ID_PATTERN.match(str(universe_id or "").strip())
+    if not match:
+        raise CanonicalUniverseUnavailableError(f"unrecognised canonical universe id {universe_id!r}")
+    size = int(match.group(1))
+    if size < MIN_CANONICAL_UNIVERSE_SIZE:
+        raise CanonicalUniverseUnavailableError(
+            f"universe id {universe_id!r} declares {size} instruments, below the "
+            f"minimum canonical size {MIN_CANONICAL_UNIVERSE_SIZE}"
+        )
+    return size
 
 
 class CanonicalUniverseUnavailableError(RuntimeError):
