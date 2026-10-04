@@ -1,23 +1,55 @@
 # PSYGRIDEVENTS
 
-## Event & News Intelligence Engine
+## Event-to-price intelligence engine for the PSYGRID 989-stock NSE universe
 
-PSYGRIDEVENTS is a precision-first event intelligence system for a defined universe of Indian financial instruments.
+PSYGRIDEVENTS runs every Indian trading day. Each minute it does the following:
 
-Its job is not to collect headlines and attach a generic sentiment label. It is designed to:
+1. Detects material information (exchange filings, regulatory and government actions, macro, commodity and global events, and financial media).
+2. Works out which stocks are exposed, through which mechanism and in which direction.
+3. Measures the live reaction of those stocks using PSYGRID's real 1-minute OHLCV for the whole universe.
+4. Judges whether the move is still tradeable.
+5. Maintains a stateful, explainable **TOP 1–5** of current opportunities.
 
-1. Discover relevant news, announcements, macro events and external developments.
-2. Verify source quality and event status.
-3. Deduplicate the same event across multiple sources.
-4. Cluster coverage into evolving stories rather than treating every article as a new event.
-5. Extract a structured event from unstructured information.
-6. Resolve companies, sectors, commodities, regulators and related entities.
-7. Estimate direct, sector, competitive, supply-chain and second-order exposure.
-8. Separate facts from interpretation and interpretation from market implication.
-9. Measure novelty, surprise, materiality, persistence and time horizon.
-10. Detect conflicting narratives and contradictory market reactions.
-11. Rank events so that the most important information reaches the top.
-12. Produce machine-readable intelligence for downstream trading systems.
+```text
+EVENT → STOCK → MECHANISM → MARKET REACTION → OPPORTUNITY → RANKED SIGNAL
+```
+
+It is not a news reader. A huge event that is already priced in ranks below a small, fresh event
+with strong market confirmation.
+
+Cost: **₹0 of additional data subscriptions.** It uses public sources (NSE/BSE public feeds,
+SEBI, RBI, PIB, ministries, Indian financial media RSS, Google News RSS, GDELT) plus the existing
+PSYGRID market-data service. There is no premium news vendor and no second Dhan feed.
+
+* Start the production engine with `python -m psygridevents.main --serve`.
+* Live signals are at `GET http://127.0.0.1:10100/signals/top` (add `?format=text` for the operator format).
+
+| Document | Content |
+|---|---|
+| [docs/PRODUCTION.md](docs/PRODUCTION.md) | Architecture, three clocks, signal states, `opportunity_score`, signal schema, API, database, restart recovery, daily operation, failure modes, troubleshooting, limitations |
+| [docs/DEPLOYMENT_ORACLE.md](docs/DEPLOYMENT_ORACLE.md) | Exact Oracle Always Free deployment |
+| [docs/SOURCES.md](docs/SOURCES.md) | Source matrix (generated from `config/sources.yaml`) |
+| [docs/PROVIDER_RESEARCH.md](docs/PROVIDER_RESEARCH.md) | Why the free stack, and which premium vendors would add what |
+| [docs/LIVE_MARKET_DATA_INTEGRATION.md](docs/LIVE_MARKET_DATA_INTEGRATION.md) | PSYGRID contract |
+| [docs/UNIVERSE_INTEGRATION.md](docs/UNIVERSE_INTEGRATION.md) | Universe sync (Psygrid now declares `PSYGRID_989`) |
+| [.env.example](.env.example) | Every environment variable |
+
+## Local development
+
+```bash
+python3.11 -m venv .venv && . .venv/bin/activate
+pip install -e ".[test]"
+pytest -q                                   # deterministic, offline (no network, no wall clock)
+
+# Run the full service against PSYGRID's public endpoint (or a local Psygrid on :10000):
+export PSYGRID_BASE_URL=http://140.245.226.102:10000 PSYGRIDEVENTS_DATA_DIR=./data PSYGRIDEVENTS_LOG_JSON=0
+python -m psygridevents.main --serve        # API + dashboard on http://127.0.0.1:10100/
+python -m psygridevents.main --probe-sources   # which public sources work from this machine
+```
+
+The service needs `httpx`, `feedparser`, `PyYAML` and `pydantic`. The HTTP API is standard
+library, and storage is SQLite. `pip install -e ".[ai]"` adds the optional, off-by-default AI
+assist.
 
 ## Design principle
 
@@ -44,32 +76,14 @@ The engine is intentionally hybrid. Deterministic Python handles ingestion, norm
 - Hypothetical, planned, reported and negated language is retained explicitly.
 - Second-order exposure is fail-closed unless the issuer/sector relationship is explicitly configured.
 
-## Provider architecture
+## Source hierarchy
 
-The engine uses multiple source classes instead of trusting one vendor:
-
-```text
-TIER 0 — FIRST-PARTY TRUTH
-NSE / BSE / SEBI / RBI / PIB / Ministries / Company IR
-
-TIER 1 — PREMIUM FINANCIAL WIRES
-LSEG/Reuters / Bloomberg / FactSet / Dow Jones
-
-TIER 2 — EVENT & NEWS ANALYTICS
-RavenPack / Perigon / NewsCatcher / Benzinga
-
-TIER 3 — BROAD DISCOVERY / CONTEXT
-GDELT / Polygon-Massive / MarketAux / NewsAPI
-
-TIER 4 — OPEN WEB / SOCIAL
-Discovery leads only; never confirmation by itself.
-```
-
-Provider research and activation policy live in `docs/PROVIDER_RESEARCH.md`, `config/providers.json`, and `config/feed_endpoints.yaml`.
-
-## Initial universe
-
-The repository monitors a 990-instrument universe. `zahidshaikmohammed-cmyk/Psygrid`'s `stocks.json` is the single canonical owner of this universe; `config/instruments.json` is a synced, provenance-stamped mirror of it (never hand-edited), validated on every load against the same strict contract Psygrid enforces on itself (exactly 990 unique, well-formed symbols) and rejected — never silently downgraded — if that contract is not met. See `docs/UNIVERSE_INTEGRATION.md` for the sync/verification mechanism and tools.
+Every observation is classed as `PRIMARY` (exchange disclosures), `OFFICIAL` (regulators and
+government), `REPUTABLE_SECONDARY` (financial media) or `DISCOVERY_ONLY` (Google News, GDELT).
+Five reports of the same event become one canonical story with five evidence records.
+Discovery-only items can never become a confirmed trading event by themselves. Contradictions are
+recorded and reduce confidence until a primary source resolves them. See
+[docs/SOURCES.md](docs/SOURCES.md).
 
 ## Acquisition → intelligence pipeline
 
@@ -162,7 +176,7 @@ The engine does not stop at ranking importance. For every semantic event it also
 
 CP10's live market observations are consumed from `zahidshaikmohammed-cmyk/Psygrid`'s own public JSON contract (`/public/stock/{symbol}.json`, `/public/live.json`) rather than a second, independent Dhan integration — Psygrid already owns Dhan authentication, security-ID resolution, WebSocket ingestion and reconnect handling. `PsygridMarketDataAdapter` is the production default; `NullMarketDataAdapter` (never fabricates an observation) remains available for offline/CI use via `--market-data none`. See `docs/LIVE_MARKET_DATA_INTEGRATION.md` for the full design, freshness/real-time-boundary rules, and the current status of live validation against Oracle.
 
-## Running
+## Legacy CLI (CP0–CP11 one-shot / watch modes)
 
 Run the package normally for diagnostics:
 

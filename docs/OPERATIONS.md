@@ -1,5 +1,10 @@
 # Operations — health, persistence, market state, CLI reference
 
+> This page documents the legacy CP0–CP11 CLI modes (`--once`, `--watch`, `--health`). The
+> production service (`--serve`: continuous engine, SQLite persistence, JSON API, TOP 1–5
+> signals) is documented in [PRODUCTION.md](PRODUCTION.md) and
+> [DEPLOYMENT_ORACLE.md](DEPLOYMENT_ORACLE.md).
+
 ## CLI reference
 
 ```bash
@@ -11,6 +16,9 @@ python -m psygridevents.main --once --market-data none    # force NullMarketData
 python -m psygridevents.main --once --state-file PATH      # opt-in incremental/idempotent --once
 python -m psygridevents.main --watch --interval SECONDS     # continuous polling mode
 python -m psygridevents.main --health                        # diagnostic status snapshot, no acquisition
+python -m psygridevents.main --serve                         # production service (see PRODUCTION.md)
+python -m psygridevents.main --probe-sources                 # probe every public source from this host
+python -m psygridevents.main --refresh-issuers               # official NSE names/ISINs into the service DB
 ```
 
 `--json` requires `--once` and is incompatible with `--watch`. `--health`

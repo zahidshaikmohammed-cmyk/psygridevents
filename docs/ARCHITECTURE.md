@@ -73,10 +73,25 @@ existing CP5 market confirmation and CP6 materiality, into one explicit
 `NO_SIGNAL/WATCH/EARLY_LONG/EARLY_SHORT/CONFIRMED/INVALIDATED/EXHAUSTED`
 signal that is deliberately independent of the CP6 priority score.
 
+## Production service (v1.0)
+
+The planes above are implemented end to end by the production service. See
+[PRODUCTION.md](PRODUCTION.md) for the module map:
+
+* **Discovery:** `providers/`
+* **Normalization and fusion:** `fusion.py`
+* **Event intelligence:** `event_pipeline.py`, `event_classifier.py`, `entity_resolution.EntityResolver`, `exposure_graph.py`
+* **Market confirmation:** `market_snapshot.py`, `reaction.py`
+* **Prioritization:** `opportunity.py`, `signal_book.py`
+* **Delivery:** `api.py`, `alerts.py`
+* **Persistence:** `storage.py`
+
+It reuses the CP2–CP11 engines: semantic extraction, direction, materiality, novelty,
+contradiction, event timing, exhaustion and the CP11 `SignalEngine`.
+
 ## Future modules
 
-1. Credentialed live market-data adapter (CP10 currently runs fail-closed with no observations)
-2. Verified NSE issuer-master ingestion (unlocks broader CP8 entity resolution)
-3. Historical replay/backtest validation of signal timing without future leakage
-4. Alerting/API layer
-5. Historical evaluation and calibration of the CP6 priority weights
+1. Calibration of `opportunity_score` weights against the accumulating outcome memory (no probability is claimed until then)
+2. PDF parsing of exchange filings whose substance is only in the attachment
+3. Documented supplier/customer edges for the exposure graph
+4. Historical replay of stored events against stored outcomes
