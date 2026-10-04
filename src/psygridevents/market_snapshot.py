@@ -136,6 +136,9 @@ class MarketSnapshot:
         return "LIVE" if age <= self.max_data_age_seconds else "STALE"
 
     def coverage(self) -> dict[str, int]:
+        cached = self._median_cache.get(("coverage",))
+        if cached is not None:
+            return dict(cached)  # type: ignore[arg-type]
         live = stale = no_data = zero_volume = 0
         for symbol, series in self.series.items():
             state = self.symbol_freshness(symbol)
@@ -147,8 +150,10 @@ class MarketSnapshot:
                 stale += 1
             if len(series) >= 5 and sum(series.volume[-5:]) == 0:
                 zero_volume += 1
-        return {"symbols": len(self.series), "live": live, "stale": stale, "no_data": no_data,
-                "zero_volume_last5": zero_volume}
+        result = {"symbols": len(self.series), "live": live, "stale": stale, "no_data": no_data,
+                  "zero_volume_last5": zero_volume}
+        self._median_cache[("coverage",)] = result  # type: ignore[assignment]
+        return dict(result)
 
     def health(self) -> str:
         if self.shards_ok == 0:
@@ -273,6 +278,25 @@ class MarketSnapshot:
         return tuple(result)
 
 
+_TS_CACHE: dict[str, float | None] = {}
+
+
+def _epoch(value: Any) -> float | None:
+    """PSYGRID "YYYY-MM-DD HH:MM:SS IST" -> epoch seconds. All ~989 stocks share the same
+    minute stamps, so results are cached (bounded) instead of re-parsing ~370k strings a minute."""
+    if not isinstance(value, str):
+        return None
+    cached = _TS_CACHE.get(value, False)
+    if cached is not False:
+        return cached  # type: ignore[return-value]
+    parsed = parse_ist_timestamp(value)
+    result = parsed.timestamp() if parsed is not None else None
+    if len(_TS_CACHE) > 20000:
+        _TS_CACHE.clear()
+    _TS_CACHE[value] = result
+    return result
+
+
 def parse_stock_payload(symbol: str, stock: dict[str, Any], *, as_of: datetime) -> SymbolSeries:
     def number(value: Any) -> float | None:
         try:
@@ -296,8 +320,8 @@ def parse_stock_payload(symbol: str, stock: dict[str, Any], *, as_of: datetime) 
         if not isinstance(candle, dict):
             series.malformed += 1
             continue
-        stamp = parse_ist_timestamp(candle.get("timestamp"))
-        if stamp is None:
+        epoch = _epoch(candle.get("timestamp"))
+        if epoch is None:
             series.malformed += 1
             continue
         try:
@@ -309,7 +333,6 @@ def parse_stock_payload(symbol: str, stock: dict[str, Any], *, as_of: datetime) 
         if min(o, h, low, c) <= 0 or v < 0 or h < low:
             series.malformed += 1
             continue
-        epoch = stamp.timestamp()
         if epoch > limit:
             series.future_rejected += 1
             continue
@@ -351,7 +374,7 @@ class PsygridBulkClient:
         self.fetch_sectors = fetch_sectors
         self.fallback_sector_of = dict(fallback_sector_of or {})
         self._sector_of: dict[str, str] = dict(self.fallback_sector_of)
-        self._sector_refreshed = 0.0
+        self._sector_refreshed: float | None = None
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(timeout),
             headers={"User-Agent": "psygridevents-bulk/2.0", "Cache-Control": "no-cache", "Accept-Encoding": "gzip"},
@@ -456,7 +479,7 @@ class PsygridBulkClient:
                 except (TypeError, ValueError):
                     vix = None
 
-        if self.fetch_sectors and _time.monotonic() - self._sector_refreshed > 3600:
+        if self.fetch_sectors and (self._sector_refreshed is None or _time.monotonic() - self._sector_refreshed > 3600):
             payload, _ = await self._get_json("/public/sectors.json")
             if payload is not None and isinstance(payload.get("sectors"), list):
                 refreshed: dict[str, str] = dict(self.fallback_sector_of)

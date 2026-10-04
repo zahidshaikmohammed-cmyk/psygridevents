@@ -24,7 +24,7 @@ rules:
 
   # --------------------------------------------------------------- orders
   - {subtype: order_cancellation, event_type: order, direction: negative, direction_confidence: 0.75, materiality: 0.55, horizon: near_term,
-     pattern: "(?i)(cancell?ation|terminat\\w+|withdraw\\w*|foreclos\\w+)\\b.{0,50}\\b(order|contract|LoA)\\b"}
+     pattern: "(?i)((cancel\\w*|terminat\\w+|withdraw\\w*|foreclos\\w+|revok\\w+|scrap\\w*)\\b.{0,50}\\b(order|contract|LoA)\\b|\\b(order|contract|LoA)s?\\b.{0,30}\\b(cancel\\w*|terminat\\w+|withdrawn|foreclosed|revoked|scrapped))"}
   - {subtype: order_win, event_type: order, direction: positive, direction_confidence: 0.8, materiality: 0.6, horizon: near_term,
      pattern: "(?i)(\\b(bag(s|ged|ging)?|receiv(es|ed|ing)|win(s|ning)?|won|secur(es|ed|ing)|award(ed|s)?|grabs?|bagging)\\b.{0,60}\\b(order|orders|contract|contracts|LoA|letter of award|letter of acceptance|work order|purchase order)\\b|receipt of (an? )?(new )?(order|contract|LoA)|award of (order|contract)|bagging of order|order win|new orders? worth)"}
 

@@ -210,7 +210,12 @@ class GoogleNewsSourceAdapter(RSSSourceAdapter):
 
     def _publisher_and_title(self, entry: Any, title: str) -> tuple[str, str]:
         source = entry.get("source") or {}
-        publisher = _text(source.get("title") if isinstance(source, dict) else getattr(source, "title", "")) or "Google News"
+        publisher = _text(source.get("title") if isinstance(source, dict) else getattr(source, "title", ""))
+        if not publisher and " - " in title:
+            head, _, tail = title.rpartition(" - ")
+            if head and 0 < len(tail) <= 60:
+                publisher = tail.strip()
+        publisher = publisher or "Google News"
         suffix = f" - {publisher}"
         if title.endswith(suffix):
             title = title[: -len(suffix)].strip()

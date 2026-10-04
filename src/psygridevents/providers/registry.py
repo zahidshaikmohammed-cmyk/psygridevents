@@ -77,7 +77,7 @@ class SourceRegistry:
             )
             previous = persisted.get(spec.id)
             if previous:
-                restored = ProviderStatus.from_dict(previous)
+                restored = ProviderStatus.from_dict({**status.to_dict(), **previous, "provider_id": spec.id})
                 # Counters/history survive restarts; activation is re-earned by a fresh probe.
                 status.total_attempts = restored.total_attempts
                 status.total_failures = restored.total_failures

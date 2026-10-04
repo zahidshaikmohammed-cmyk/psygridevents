@@ -55,7 +55,7 @@ class NoveltyEngine:
             if previous.event_id != event.event_id
             and self._compatible(previous, event)
             and self._age(current_time, previous.event_time) is not None
-            and self._age(current_time, previous.event_time) <= self.lookback
+            and self._age(current_time, previous.event_time) <= self.lookback.total_seconds() / 3600.0
         ]
 
         if not candidates:

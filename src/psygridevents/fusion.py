@@ -32,8 +32,16 @@ CONTRADICTED = "CONTRADICTED"
 
 
 def content_key(observation: RawObservation) -> str:
+    """Publisher + title + leading summary text.
+
+    The summary is part of the key because exchange feeds use the company
+    name as the title of every filing; title alone would drop real filings.
+    Re-polls of the same item produce the same key (and the URL key also
+    catches them).
+    """
     title = canonical_text(observation.title)
-    basis = f"{observation.publisher.strip().lower()}|{title}"
+    summary = canonical_text(observation.summary)[:300]
+    basis = f"{observation.publisher.strip().lower()}|{title}|{summary}"
     return hashlib.sha1(basis.encode("utf-8")).hexdigest()
 
 
@@ -67,6 +75,15 @@ class Evidence:
     modality: str
     tokens: frozenset[str]
     raw: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def match_text(self) -> str:
+        """Text used for similarity. NSE feed titles are just the company name, so the
+        filing subject and summary carry the event identity."""
+        subject = (self.raw.get("nse_filing") or {}).get("subject", "")
+        if subject or self.quality == SourceQuality.PRIMARY.value:
+            return f"{self.title} {subject} {self.summary[:300]}".lower()
+        return self.title.lower()
 
     @property
     def ingestion_latency_seconds(self) -> float | None:
@@ -184,13 +201,13 @@ class StoryBook:
                 return 0.0
         elif evidence.symbols or story_symbols:
             # One side names an issuer and the other does not: only near-identical titles join.
-            best = max(SequenceMatcher(None, evidence.title.lower(), item.title.lower()).ratio() for item in story.evidence[-5:])
+            best = max(SequenceMatcher(None, evidence.match_text, item.match_text).ratio() for item in story.evidence[-5:])
             return best if best >= self.title_similarity else 0.0
         family = subtype_family(evidence.subtype)
         families = story.families
         left, right = evidence.tokens, story.tokens
         jaccard = len(left & right) / len(left | right) if left and right else 0.0
-        title_ratio = max(SequenceMatcher(None, evidence.title.lower(), item.title.lower()).ratio() for item in story.evidence[-5:])
+        title_ratio = max(SequenceMatcher(None, evidence.match_text, item.match_text).ratio() for item in story.evidence[-5:])
         score = max(jaccard, title_ratio * 0.9)
         if evidence.symbols and story_symbols and families and family in families:
             # Same issuer, same event family, within 12h: the same evolving event
@@ -200,8 +217,9 @@ class StoryBook:
         elif evidence.symbols and story_symbols and families and family not in families and family not in (
             "unclassified", "routine_disclosure"
         ):
-            # Same issuer but a different kind of event: keep separate stories.
-            score = min(score, 0.25) if title_ratio < 0.9 else score
+            # Same issuer but a different kind of event: keep separate stories
+            # unless the reports are near-identical text.
+            score = min(score, 0.25) if title_ratio < 0.95 else score
         return score
 
     def add(self, evidence: Evidence) -> tuple[Story, bool]:
@@ -228,6 +246,13 @@ class StoryBook:
     def _update_contradictions(story: Story, evidence: Evidence) -> None:
         """Record source disagreement inside one story instead of silently picking a side."""
         new_direction = evidence.direction
+        if evidence.quality in (SourceQuality.PRIMARY.value, SourceQuality.OFFICIAL.value):
+            for entry in story.contradictions:
+                if entry.get("status") == "open":
+                    entry["status"] = "resolved"
+                    entry["resolution"] = (
+                        f"later primary/official source prevails: {evidence.publisher} ({evidence.subtype}, {new_direction})"
+                    )
         for other in story.evidence[:-1]:
             conflict = None
             if {new_direction, other.direction} == {"positive", "negative"} and subtype_family(evidence.subtype) == subtype_family(other.subtype):
