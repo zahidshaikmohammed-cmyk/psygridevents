@@ -43,4 +43,6 @@ def normalized_observation(observation: RawObservation) -> RawObservation:
         published_at=observation.published_at,
         observed_at=observation.observed_at,
         raw=observation.raw,
+        source_quality=observation.source_quality,
+        category=observation.category,
     )
