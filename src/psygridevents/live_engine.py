@@ -61,7 +61,7 @@ from .universe import load_instruments
 
 log = logging.getLogger("psygridevents.engine")
 
-MAX_EXPOSURES_EVALUATED = 15
+MAX_EXPOSURES_EVALUATED = 40
 
 
 @dataclass

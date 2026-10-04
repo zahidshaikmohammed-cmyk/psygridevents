@@ -73,7 +73,7 @@ class ExposureGraph990:
         graph_file: str | Path = DEFAULT_GRAPH_FILE,
         sector_file: str | Path | None = DEFAULT_SECTOR_FILE,
         *,
-        max_exposures_per_event: int = 40,
+        max_exposures_per_event: int = 60,
     ) -> None:
         self.universe = frozenset(universe)
         payload = yaml.safe_load(Path(graph_file).read_text(encoding="utf-8")) or {}

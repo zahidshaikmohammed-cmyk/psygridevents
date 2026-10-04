@@ -205,6 +205,7 @@ class ServiceRuntime:
         async with self._source_semaphore:
             if self.registry.needs_probe(item, now):
                 ok = await self.registry.probe(item, self.http, now)
+                self.store.save_provider_health(item.spec.id, item.tracker.status.to_dict())
                 if not ok:
                     return []
             if not item.tracker.status.active or not item.tracker.is_due(now):
