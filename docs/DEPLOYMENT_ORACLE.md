@@ -96,4 +96,5 @@ To update by hand: `cd ~/psygridevents && git pull && bash deploy/install_oracle
 | Restore | `sudo systemctl stop psygridevents && cp data/backups/<file> data/psygridevents.sqlite3 && sudo systemctl start psygridevents` |
 | Resync the PSYGRID universe after Psygrid changes `stocks.json` | `.venv/bin/python tools/sync_universe_from_psygrid.py --psygrid-url https://raw.githubusercontent.com/zahidshaikmohammed-cmyk/Psygrid/main/stocks.json`, then commit `config/instruments.json` |
 | Disk usage | About 20–60 MB per month of SQLite; raw payloads are pruned after 45 days |
-| Memory cap | `MemoryMax=700M` in the unit file (lower it on a 1 GB AMD micro shape if needed) |
+| Resource limits | `MemoryHigh=500M`/`MemoryMax=700M`, `CPUWeight=20`, `CPUQuota=80%`, idle I/O, `OOMScoreAdjust=900`, `TasksMax=128` in the unit file. PSYGRID always wins: under pressure the kernel kills this service, never PSYGRID |
+| Isolation from PSYGRID | Reads PSYGRID over HTTP only. It never starts, stops or restarts `psygrid`, and `ProtectHome=read-only` with `ReadWritePaths` limited to its own checkout means it cannot write PSYGRID's files. With no live PSYGRID data it produces no market signals |
