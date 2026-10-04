@@ -284,12 +284,61 @@ def main() -> None:
         "unless this is provided.",
     )
     parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Run the production service (sources + PSYGRID market loop + API + persistence). "
+        "Configured from config/runtime.yaml and environment variables (see .env.example).",
+    )
+    parser.add_argument(
+        "--probe-sources",
+        action="store_true",
+        help="Probe every configured public source once from this host and print the result as JSON.",
+    )
+    parser.add_argument(
+        "--refresh-issuers",
+        action="store_true",
+        help="Fetch official NSE issuer names/ISINs/industries into the service database and exit.",
+    )
+    parser.add_argument(
         "--health",
         action="store_true",
         help="Print a diagnostic health/status report (universe, providers, Psygrid connectivity) "
         "and exit. Never runs acquisition and never affects any signal.",
     )
     args = parser.parse_args()
+
+    if args.serve:
+        from .runtime import main as serve_main
+
+        serve_main()
+        return
+
+    if args.probe_sources or args.refresh_issuers:
+        import asyncio
+
+        from .runtime import configure_logging, probe_sources
+        from .settings import load_settings
+
+        settings = load_settings()
+        configure_logging(settings)
+        if args.probe_sources:
+            print(json.dumps(asyncio.run(probe_sources(settings)), indent=2, default=str))
+        if args.refresh_issuers:
+            from .issuer_refresh import refresh_issuers
+            from .providers import SourceHttpClient
+            from .storage import Store
+
+            async def _refresh() -> dict:
+                store = Store(settings.db_path)
+                http = SourceHttpClient(user_agent=settings.http_user_agent)
+                try:
+                    return await refresh_issuers(store, http, frozenset(load_instruments(settings.instruments_file)))
+                finally:
+                    await http.aclose()
+                    store.close()
+
+            print(json.dumps(asyncio.run(_refresh()), indent=2))
+        return
 
     if args.health:
         # Deliberately does not call load_instruments()/etc. unconditionally

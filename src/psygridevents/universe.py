@@ -9,7 +9,6 @@ from .universe_integrity import (
     expected_size_for_universe_id,
 )
 
-
 DEFAULT_UNIVERSE_PATH = Path(__file__).resolve().parents[2] / "config" / "instruments.json"
 
 
