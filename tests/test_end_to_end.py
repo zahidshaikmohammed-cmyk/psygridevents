@@ -93,7 +93,7 @@ def test_full_pipeline_from_raw_sources_and_raw_psygrid_to_top_signal():
             stocks = _psygrid_payloads(bars, now)
             letters = "abcdefghijklmnopqrstuv"
 
-            def psygrid(request, stocks=stocks):
+            def psygrid(request, stocks=stocks, letters=letters):
                 path = request.url.path
                 if path.startswith("/public/live-"):
                     letter = path.split("-")[1][0]

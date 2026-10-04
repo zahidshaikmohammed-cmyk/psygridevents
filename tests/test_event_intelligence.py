@@ -199,3 +199,22 @@ def test_macro_event_maps_to_exposed_groups_with_mechanism_and_direction():
     assert all(item.mechanism and 0 < item.confidence <= 1 for item in event.exposures)
     persisted = engine.store.exposures_for_event(event.event_id)
     assert len(persisted) == len(event.exposures)
+
+
+def test_unrelated_headlines_without_companies_are_not_merged_but_rewrites_are():
+    engine = make_engine()
+    headlines = [
+        "RBI keeps repo rate unchanged, maintains neutral stance",
+        "Brent crude surges 5% after OPEC output cut",
+        "Rupee falls to record low against the dollar",
+        "Government imposes anti-dumping duty on Chinese steel",
+        "GST Council recommends rate cut on insurance premiums",
+        "Monsoon rainfall 8% above normal, says weather office",
+    ]
+    events = engine.ingest([media(title, at(10 + i), publisher=f"P{i}", url=f"https://x.invalid/u{i}")
+                            for i, title in enumerate(headlines)], at(30))
+    assert len({event.story_id for event in events}) == len(headlines)
+    rewrite = engine.ingest([media("Brent crude surges 5% after OPEC output cut deal", at(20), publisher="Mint",
+                                   url="https://x.invalid/rewrite")], at(31))[0]
+    crude = next(event for event in events if "Brent" in event.headline)
+    assert rewrite.story_id == crude.story_id

@@ -113,13 +113,21 @@ class Story:
     evidence: list[Evidence]
     contradictions: list[dict[str, Any]] = field(default_factory=list)
     dirty: bool = True
+    _symbols: set[str] | None = field(default=None, repr=False, compare=False)
+    _tokens: frozenset[str] | None = field(default=None, repr=False, compare=False)
+
+    def invalidate(self) -> None:
+        self._symbols = None
+        self._tokens = None
 
     @property
     def symbols(self) -> set[str]:
-        result: set[str] = set()
-        for item in self.evidence:
-            result.update(item.symbols)
-        return result
+        if self._symbols is None:
+            result: set[str] = set()
+            for item in self.evidence:
+                result.update(item.symbols)
+            self._symbols = result
+        return self._symbols
 
     @property
     def first_seen(self) -> datetime:
@@ -147,10 +155,12 @@ class Story:
 
     @property
     def tokens(self) -> frozenset[str]:
-        result: set[str] = set()
-        for item in self.evidence[-8:]:
-            result |= item.tokens
-        return frozenset(result)
+        if self._tokens is None:
+            result: set[str] = set()
+            for item in self.evidence[-8:]:
+                result |= item.tokens
+            self._tokens = frozenset(result)
+        return self._tokens
 
     @property
     def representative(self) -> Evidence:
@@ -180,52 +190,92 @@ class StoryBook:
         self.join_similarity = join_similarity
         self.title_similarity = title_similarity
         self.stories: dict[str, Story] = {}
+        self._by_symbol: dict[str, set[str]] = {}
+        self._by_token: dict[str, set[str]] = {}
+
+    def _index(self, story: Story) -> None:
+        for symbol in story.symbols:
+            self._by_symbol.setdefault(symbol, set()).add(story.story_id)
+        for token in story.tokens:
+            self._by_token.setdefault(token, set()).add(story.story_id)
+
+    def _candidates(self, evidence: Evidence) -> list[Story]:
+        """Stories that could possibly match: shared issuer, or >= 2 shared content tokens."""
+        ids: set[str] = set()
+        for symbol in evidence.symbols:
+            ids |= self._by_symbol.get(symbol, set())
+        counts: dict[str, int] = {}
+        for token in evidence.tokens:
+            for story_id in self._by_token.get(token, ()):
+                counts[story_id] = counts.get(story_id, 0) + 1
+        ids |= {story_id for story_id, count in counts.items() if count >= 2}
+        return [self.stories[story_id] for story_id in ids if story_id in self.stories]
 
     def expire(self, now: datetime) -> list[str]:
         expired = [story_id for story_id, story in self.stories.items() if now - story.latest_seen > self.window]
         for story_id in expired:
             del self.stories[story_id]
+        if expired:
+            gone = set(expired)
+            for index in (self._by_symbol, self._by_token):
+                for key in list(index):
+                    index[key] -= gone
+                    if not index[key]:
+                        del index[key]
         return expired
 
     def restore(self, stories: Iterable[Story]) -> None:
         for story in stories:
             story.dirty = False
             self.stories[story.story_id] = story
+            self._index(story)
 
     def _score(self, story: Story, evidence: Evidence) -> float:
         if abs((evidence.public_at - story.latest_seen).total_seconds()) > self.window.total_seconds():
             return 0.0
         story_symbols = story.symbols
+        recent = story.evidence[-5:]
+        left, right = evidence.tokens, story.tokens
+        jaccard = len(left & right) / len(left | right) if left and right else 0.0
         if evidence.symbols and story_symbols:
             if not set(evidence.symbols) & story_symbols:
                 return 0.0
-        elif evidence.symbols or story_symbols:
-            # One side names an issuer and the other does not: only near-identical titles join.
-            best = max(SequenceMatcher(None, evidence.match_text, item.match_text).ratio() for item in story.evidence[-5:])
-            return best if best >= self.title_similarity else 0.0
-        family = subtype_family(evidence.subtype)
-        families = story.families
-        left, right = evidence.tokens, story.tokens
-        jaccard = len(left & right) / len(left | right) if left and right else 0.0
-        title_ratio = max(SequenceMatcher(None, evidence.match_text, item.match_text).ratio() for item in story.evidence[-5:])
-        score = max(jaccard, title_ratio * 0.9)
-        if evidence.symbols and story_symbols and families and family in families:
-            # Same issuer, same event family, within 12h: the same evolving event
-            # (e.g. board-meeting outcome + results filing + media coverage).
-            if abs((evidence.public_at - story.first_public_at).total_seconds()) <= 12 * 3600:
-                score = max(score, 0.6)
-        elif evidence.symbols and story_symbols and families and family not in families and family not in (
-            "unclassified", "routine_disclosure"
-        ):
-            # Same issuer but a different kind of event: keep separate stories
-            # unless the reports are near-identical text.
-            score = min(score, 0.25) if title_ratio < 0.95 else score
-        return score
+            family = subtype_family(evidence.subtype)
+            families = story.families
+            ratio = max(SequenceMatcher(None, evidence.match_text, item.match_text).ratio() for item in recent)
+            score = max(jaccard, ratio * 0.9)
+            known = family not in ("unclassified", "routine_disclosure")
+            if known and families and family in families:
+                # Same issuer, same event family, within 12h: one evolving event
+                # (e.g. board-meeting outcome + results filing + media coverage).
+                if abs((evidence.public_at - story.first_public_at).total_seconds()) <= 12 * 3600:
+                    return max(score, 0.6)
+                return score
+            if known and families and family not in families:
+                # Same issuer, different kind of event: separate stories unless near-identical text.
+                return score if ratio >= 0.95 else min(score, 0.25)
+            return score
+        if evidence.symbols or story_symbols:
+            # One side names an issuer and the other does not: only near-identical text joins.
+            ratio = max(SequenceMatcher(None, evidence.match_text, item.match_text).ratio() for item in recent)
+            return ratio if ratio >= self.title_similarity else 0.0
+        # Neither side names an issuer (macro/policy/commodity coverage): require strong overlap.
+        if jaccard >= 0.5:
+            return max(jaccard, self.join_similarity)
+        if jaccard < 0.35:
+            return 0.0
+        matcher_best = 0.0
+        for item in recent:
+            matcher = SequenceMatcher(None, evidence.match_text, item.match_text)
+            if matcher.real_quick_ratio() < 0.8 or matcher.quick_ratio() < 0.8:
+                continue
+            matcher_best = max(matcher_best, matcher.ratio())
+        return matcher_best if matcher_best >= 0.8 else 0.0
 
     def add(self, evidence: Evidence) -> tuple[Story, bool]:
         """Attach evidence to the best matching open story or open a new one. Returns (story, created)."""
         best: tuple[float, Story] | None = None
-        for story in self.stories.values():
+        for story in self._candidates(evidence):
             score = self._score(story, evidence)
             if score >= self.join_similarity and (best is None or score > best[0]):
                 best = (score, story)
@@ -234,12 +284,15 @@ class StoryBook:
             if any(item.obs_id == evidence.obs_id for item in story.evidence):
                 return story, False
             story.evidence.append(evidence)
+            story.invalidate()
             story.dirty = True
+            self._index(story)
             self._update_contradictions(story, evidence)
             return story, False
         story_id = "st-" + hashlib.sha1(f"{evidence.obs_id}|{evidence.public_at.isoformat()}".encode()).hexdigest()[:16]
         story = Story(story_id=story_id, evidence=[evidence])
         self.stories[story_id] = story
+        self._index(story)
         return story, True
 
     @staticmethod

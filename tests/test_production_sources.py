@@ -8,7 +8,13 @@ from pathlib import Path
 import httpx
 import pytest
 
-from psygridevents.providers import SourceHttpClient, SourceQuality, SourceRegistry, SourceSpec, load_source_specs
+from psygridevents.providers import (
+    SourceHttpClient,
+    SourceQuality,
+    SourceRegistry,
+    SourceSpec,
+    load_source_specs,
+)
 from psygridevents.providers.base import Activation
 from psygridevents.providers.health import HealthState
 from psygridevents.settings import CONFIG_DIR

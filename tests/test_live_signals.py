@@ -3,7 +3,17 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from live_support import Bars, at, background_universe, ist, make_engine, media, nse_filing, snapshot, state_of
+from live_support import (
+    Bars,
+    at,
+    background_universe,
+    ist,
+    make_engine,
+    media,
+    nse_filing,
+    snapshot,
+    state_of,
+)
 
 from psygridevents.signal_book import ACTIONABLE
 
