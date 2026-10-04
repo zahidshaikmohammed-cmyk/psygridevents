@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the PSYGRIDEVENTS SQLite backup on weekdays after the close
+
+[Timer]
+# 11:15 UTC = 16:45 IST, after the post-market close-out.
+OnCalendar=Mon..Fri 11:15 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -23,9 +23,30 @@ sudo systemctl daemon-reload
 sudo systemctl enable psygridevents >/dev/null
 sudo systemctl restart psygridevents
 
-# Daily SQLite backup at 16:45 IST (11:15 UTC), keeping 14 days.
-CRON_LINE="15 11 * * 1-5 $APP_DIR/deploy/backup_db.sh >> $APP_DIR/data/backups/backup.log 2>&1"
-( crontab -l 2>/dev/null | grep -v backup_db.sh; echo "$CRON_LINE" ) | crontab -
+# Daily SQLite backup on weekdays at 16:45 IST via a systemd timer (no cron dependency).
+sudo install -m 644 deploy/psygridevents-backup.service /etc/systemd/system/psygridevents-backup.service
+sudo install -m 644 deploy/psygridevents-backup.timer /etc/systemd/system/psygridevents-backup.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now psygridevents-backup.timer >/dev/null
 
-sleep 8
-curl -fsS "http://127.0.0.1:${PSYGRIDEVENTS_API_PORT:-10100}/health" && echo && echo "psygridevents is running."
+# Wait for the API to answer (the first start restores state and probes sources).
+PORT="${PSYGRIDEVENTS_API_PORT:-10100}"
+for attempt in $(seq 1 30); do
+  if .venv/bin/python - "$PORT" <<'PY'
+import json, sys, urllib.request
+try:
+    with urllib.request.urlopen(f"http://127.0.0.1:{sys.argv[1]}/health", timeout=3) as r:
+        print(json.dumps(json.load(r)))
+except Exception:
+    sys.exit(1)
+PY
+  then
+    echo "psygridevents is running."
+    exit 0
+  fi
+  sleep 2
+done
+echo "psygridevents did not answer /health within 60s"
+sudo systemctl status psygridevents --no-pager || true
+sudo journalctl -u psygridevents -n 80 --no-pager || true
+exit 1

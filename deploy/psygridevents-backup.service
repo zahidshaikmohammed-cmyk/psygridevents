@@ -1,0 +1,12 @@
+[Unit]
+Description=PSYGRIDEVENTS daily SQLite backup
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+Environment=APP_DIR=/home/ubuntu/psygridevents
+ExecStart=/home/ubuntu/psygridevents/deploy/backup_db.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=psygridevents-backup
