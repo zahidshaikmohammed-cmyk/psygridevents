@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "psygridevents"
-version = "0.2.0"
+version = "1.0.0"
 description = "Precision-first event and news intelligence engine"
 requires-python = ">=3.11"
 dependencies = [
@@ -18,9 +18,13 @@ dependencies = [
 test = [
     "pytest>=8,<9",
 ]
+ai = [
+    "anthropic>=0.70",
+]
 
 [project.scripts]
 psygridevents = "psygridevents.main:main"
+psygridevents-service = "psygridevents.runtime:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,0 +1,411 @@
+version: "2.0.0"
+
+# PSYGRIDEVENTS production source matrix (free / public sources only).
+#
+# Rules (enforced by code, see providers/registry.py):
+#  * No URL here is trusted blindly. Every `auto` source is PROBED on the
+#    production host at start-up and again before every session; it is polled
+#    only if the probe returns the documented structure (a parseable feed with
+#    items, a CSV with the documented columns, ...). A wrong or retired URL
+#    therefore fails closed as DISCONNECTED -- it can never produce data.
+#  * robots.txt is honoured for every host. No cookies, logins, CAPTCHAs or
+#    anti-bot challenges are ever attempted. A 401/403/429 is a failure.
+#  * `verification` records WHY the URL is here:
+#      documented_indexed  -- the exact URL is published by / indexed from the
+#                             publisher (search-engine indexed feed title or the
+#                             publisher's own documentation).
+#      official_catalogue  -- resolved at probe time from the publisher's own
+#                             RSS catalogue page (catalogue_url + catalogue_match).
+#      curated_directory   -- listed in an independent curated feed directory;
+#                             probe-validated before use.
+#      none                -- no documented machine-readable endpoint exists;
+#                             listed as kind=unavailable so the matrix is honest.
+#  * quality is the evidence class: PRIMARY / OFFICIAL / REPUTABLE_SECONDARY /
+#    DISCOVERY_ONLY. DISCOVERY_ONLY items can never become a confirmed trading
+#    event on their own.
+#  * poll_seconds applies during PRE_MARKET/MARKET; off_hours_poll_seconds otherwise.
+
+defaults:
+  activation: auto
+  poll_seconds: 90
+  off_hours_poll_seconds: 900
+  max_items: 200
+
+sources:
+  # ------------------------------------------------------------------ NSE (PRIMARY)
+  - id: nse_announcements
+    name: NSE Corporate Announcements
+    kind: rss
+    quality: PRIMARY
+    category: corporate_disclosure
+    url: https://nsearchives.nseindia.com/content/RSS/Online_announcements.xml
+    catalogue_url: https://www.nseindia.com/static/rss-feed
+    catalogue_match: "(?i)Online_announcements\\.xml"
+    verification: official_catalogue
+    evidence: "NSE RSS catalogue (https://www.nseindia.com/static/rss-feed) lists Corporate Announcements; feed hosted under nsearchives.nseindia.com/content/RSS/."
+    poll_seconds: 45
+    stale_after_hours: 6
+  - id: nse_board_meetings
+    name: NSE Board Meetings
+    kind: rss
+    quality: PRIMARY
+    category: corporate_disclosure
+    url: https://nsearchives.nseindia.com/content/RSS/Board_Meetings.xml
+    verification: documented_indexed
+    evidence: "Feed indexed with title 'NSE News - Board Meetings'."
+    poll_seconds: 120
+  - id: nse_corporate_actions
+    name: NSE Corporate Actions
+    kind: rss
+    quality: PRIMARY
+    category: corporate_action
+    url: https://nsearchives.nseindia.com/content/RSS/Corporate_action.xml
+    verification: documented_indexed
+    evidence: "Feed indexed with title 'NSE News - Latest Corporates Action'."
+    poll_seconds: 300
+  - id: nse_financial_results
+    name: NSE Financial Results
+    kind: rss
+    quality: PRIMARY
+    category: results
+    url: https://nsearchives.nseindia.com/content/RSS/Financial_Results.xml
+    catalogue_url: https://www.nseindia.com/static/rss-feed
+    catalogue_match: "(?i)Financial_Results\\.xml"
+    verification: official_catalogue
+    evidence: "NSE RSS catalogue lists Financial Results."
+    poll_seconds: 60
+  - id: nse_insider_trading
+    name: NSE Insider Trading (PIT)
+    kind: rss
+    quality: PRIMARY
+    category: insider_trading
+    url: https://nsearchives.nseindia.com/content/RSS/Insider_Trading.xml
+    catalogue_url: https://www.nseindia.com/static/rss-feed
+    catalogue_match: "(?i)Insider_Trading\\.xml"
+    verification: official_catalogue
+    evidence: "NSE RSS catalogue lists Insider Trading."
+    poll_seconds: 300
+  - id: nse_circulars
+    name: NSE Exchange Circulars
+    kind: rss
+    quality: PRIMARY
+    category: exchange_circular
+    url: https://nsearchives.nseindia.com/content/RSS/Circulars.xml
+    catalogue_url: https://www.nseindia.com/static/rss-feed
+    catalogue_match: "(?i)Circular[s]?\\.xml"
+    verification: official_catalogue
+    evidence: "NSE RSS catalogue lists exchange circulars (F&O, surveillance, index notices are published as circulars)."
+    poll_seconds: 300
+  - id: nse_bulk_deals
+    name: NSE Bulk Deals (archives CSV)
+    kind: nse_deals_csv
+    quality: PRIMARY
+    category: bulk_block_deal
+    url: https://archives.nseindia.com/content/equities/bulk.csv
+    verification: documented_indexed
+    evidence: "NSE archives bulk deal file referenced by NSE data tooling (archives.nseindia.com/content/equities/bulk.csv). Date-only timestamps."
+    poll_seconds: 900
+    params: {deal_kind: bulk}
+  - id: nse_block_deals
+    name: NSE Block Deals (archives CSV)
+    kind: nse_deals_csv
+    quality: PRIMARY
+    category: bulk_block_deal
+    url: https://archives.nseindia.com/content/equities/block.csv
+    verification: documented_indexed
+    evidence: "NSE archives block deal file (archives.nseindia.com/content/equities/block.csv). Date-only timestamps."
+    poll_seconds: 600
+    params: {deal_kind: block}
+  - id: nse_surveillance_asm_gsm
+    name: NSE ASM/GSM surveillance lists
+    kind: unavailable
+    quality: PRIMARY
+    category: surveillance
+    verification: none
+    notes: "ASM/GSM lists are served only through NSE's browser-session JSON API; no documented public feed. Surveillance changes are also announced as NSE circulars (covered by nse_circulars)."
+  - id: nse_fo_ban
+    name: NSE F&O securities in ban period
+    kind: unavailable
+    quality: PRIMARY
+    category: fo_notice
+    verification: none
+    notes: "No documented feed URL verified; F&O ban/market-wide position limit notices are published as NSE circulars (covered by nse_circulars)."
+
+  # ------------------------------------------------------------------ BSE (PRIMARY)
+  - id: bse_corporate_announcements
+    name: BSE Corporate Announcements
+    kind: rss
+    quality: PRIMARY
+    category: corporate_disclosure
+    catalogue_url: https://www.bseindia.com/rss-feed.html
+    catalogue_match: "(?i)(corp|announce)[^\"']*\\.xml"
+    verification: official_catalogue
+    evidence: "BSE RSS page lists a Corporate Announcements RSS feed; the exact URL is only taken from that official page at probe time."
+    poll_seconds: 60
+  - id: bse_notices
+    name: BSE Notices
+    kind: rss
+    quality: PRIMARY
+    category: exchange_circular
+    url: https://www.bseindia.com/data/xml/notices.xml
+    verification: documented_indexed
+    evidence: "BSE documents www.bseindia.com/data/xml/notices.xml as its Notices RSS feed."
+    poll_seconds: 300
+
+  # ------------------------------------------------------------------ Regulators / Govt (OFFICIAL)
+  - id: sebi_rss
+    name: SEBI (press releases, circulars, orders)
+    kind: rss
+    quality: OFFICIAL
+    category: regulatory
+    url: https://www.sebi.gov.in/sebirss.xml
+    verification: documented_indexed
+    evidence: "SEBI RSS page https://www.sebi.gov.in/rss.html"
+    poll_seconds: 180
+  - id: rbi_press_releases
+    name: RBI Press Releases
+    kind: rss
+    quality: OFFICIAL
+    category: central_bank
+    url: https://rbi.org.in/pressreleases_rss.xml
+    catalogue_url: https://www.rbi.org.in/Scripts/rss.aspx
+    catalogue_match: "(?i)pressreleases_rss\\.xml"
+    verification: documented_indexed
+    evidence: "RBI RSS page https://rbi.org.in/Scripts/rss.aspx; feed URL indexed."
+    poll_seconds: 120
+  - id: rbi_notifications
+    name: RBI Notifications
+    kind: rss
+    quality: OFFICIAL
+    category: central_bank
+    url: https://rbi.org.in/notifications_rss.xml
+    catalogue_url: https://www.rbi.org.in/Scripts/rss.aspx
+    catalogue_match: "(?i)notifications_rss\\.xml"
+    verification: documented_indexed
+    evidence: "RBI RSS page; feed URL indexed."
+    poll_seconds: 300
+  - id: rbi_speeches
+    name: RBI Speeches
+    kind: rss
+    quality: OFFICIAL
+    category: central_bank
+    url: https://rbi.org.in/speeches_rss.xml
+    catalogue_url: https://www.rbi.org.in/Scripts/rss.aspx
+    catalogue_match: "(?i)speeches_rss\\.xml"
+    verification: documented_indexed
+    evidence: "RBI RSS page; feed URL indexed."
+    poll_seconds: 900
+  - id: pib_releases
+    name: PIB (all ministries, English)
+    kind: rss
+    quality: OFFICIAL
+    category: government_policy
+    url: https://pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=1
+    verification: documented_indexed
+    evidence: "PIB RSS page https://www.pib.gov.in/ViewRss.aspx; carries Finance, Commerce (DGFT/DGTR), Statistics (MoSPI), Petroleum, Power, Telecom, Coal ministry releases."
+    poll_seconds: 180
+  - id: dgft_notifications
+    name: DGFT Notifications (listing page)
+    kind: html_links
+    quality: OFFICIAL
+    category: trade_policy
+    url: https://www.dgft.gov.in/CP/?opt=notification
+    include_pattern: "(?i)(notification|public notice|export|import|policy)"
+    verification: documented_indexed
+    evidence: "Official DGFT notifications page. Page may be script-rendered; the probe fails closed if no links are present in the HTML."
+    poll_seconds: 900
+  - id: mospi_press_releases
+    name: MoSPI Press Releases (listing page)
+    kind: html_links
+    quality: OFFICIAL
+    category: macro
+    url: http://mospi.nic.in/press-release
+    include_pattern: "(?i)(press|release|cpi|iip|gdp|inflation|index)"
+    verification: documented_indexed
+    evidence: "Official MoSPI press-release page (mospi.nic.in/press-release indexed). CPI/IIP/GDP releases are also carried by PIB."
+    poll_seconds: 900
+  - id: cci_notifications
+    name: CCI Notifications (listing page)
+    kind: html_links
+    quality: OFFICIAL
+    category: competition
+    url: https://www.cci.gov.in/legal-framwork/notifications
+    include_pattern: "(?i)(notification|order|combination|regulation)"
+    verification: documented_indexed
+    evidence: "Official CCI notifications page (path spelled 'legal-framwork' by CCI)."
+    poll_seconds: 1800
+  - id: dgtr_findings
+    name: DGTR (anti-dumping / safeguard findings)
+    kind: unavailable
+    quality: OFFICIAL
+    category: trade_remedy
+    verification: none
+    notes: "No documented feed verified. Customs duty notifications that implement DGTR findings are released via PIB/CBIC; discovery via Google News query 'anti-dumping duty India'."
+  - id: cbic_gst_council
+    name: CBIC / GST Council
+    kind: unavailable
+    quality: OFFICIAL
+    category: tax_policy
+    verification: none
+    notes: "No documented public feed verified. GST Council outcomes are released via PIB (Ministry of Finance); discovery via Google News."
+  - id: egazette
+    name: e-Gazette of India
+    kind: unavailable
+    quality: OFFICIAL
+    category: gazette
+    verification: none
+    notes: "egazette.gov.in exposes search forms only (no documented feed); not scraped."
+  - id: ppac
+    name: PPAC (petroleum prices / data)
+    kind: unavailable
+    quality: OFFICIAL
+    category: commodity
+    verification: none
+    notes: "No documented feed verified; fuel-price/windfall-tax decisions are released via PIB (Petroleum ministry)."
+  - id: trai
+    name: TRAI
+    kind: unavailable
+    quality: OFFICIAL
+    category: regulatory
+    verification: none
+    notes: "No documented feed verified; tariff/regulation releases appear via PIB and Google News discovery."
+  - id: cerc
+    name: CERC
+    kind: unavailable
+    quality: OFFICIAL
+    category: regulatory
+    verification: none
+    notes: "No documented feed verified."
+  - id: imd
+    name: IMD (monsoon / weather)
+    kind: unavailable
+    quality: OFFICIAL
+    category: weather
+    verification: none
+    notes: "No documented feed verified; monsoon forecasts are released via PIB (Ministry of Earth Sciences)."
+  - id: nclt
+    name: NCLT
+    kind: unavailable
+    quality: OFFICIAL
+    category: legal
+    verification: none
+    notes: "Cause lists/orders are behind search forms; not scraped. Listed companies must disclose NCLT outcomes on NSE/BSE (covered)."
+  - id: supreme_court
+    name: Supreme Court of India
+    kind: unavailable
+    quality: OFFICIAL
+    category: legal
+    verification: none
+    notes: "Judgments are behind CAPTCHA-protected search; never bypassed. Discovery via Google News."
+
+  # ------------------------------------------------------------------ Reputable secondary media
+  - id: moneycontrol_latest
+    name: Moneycontrol Latest News
+    kind: rss
+    quality: REPUTABLE_SECONDARY
+    category: financial_media
+    url: http://www.moneycontrol.com/rss/latestnews.xml
+    verification: curated_directory
+    evidence: "Listed in plenaryapp/awesome-rss-feeds (India)."
+    poll_seconds: 120
+  - id: economictimes_default
+    name: Economic Times
+    kind: rss
+    quality: REPUTABLE_SECONDARY
+    category: financial_media
+    url: https://economictimes.indiatimes.com/rssfeedsdefault.cms
+    verification: curated_directory
+    evidence: "Listed in plenaryapp/awesome-rss-feeds (India)."
+    poll_seconds: 120
+  - id: business_standard_top
+    name: Business Standard Top Stories
+    kind: rss
+    quality: REPUTABLE_SECONDARY
+    category: financial_media
+    url: https://www.business-standard.com/rss/home_page_top_stories.rss
+    verification: curated_directory
+    evidence: "Listed in plenaryapp/awesome-rss-feeds (India)."
+    poll_seconds: 180
+  - id: livemint_markets
+    name: Mint Markets
+    kind: rss
+    quality: REPUTABLE_SECONDARY
+    category: financial_media
+    url: https://www.livemint.com/rss/markets
+    verification: curated_directory
+    evidence: "Listed in the Feedspot 2026 financial-news feed directory."
+    poll_seconds: 180
+  - id: financial_express
+    name: Financial Express
+    kind: rss
+    quality: REPUTABLE_SECONDARY
+    category: financial_media
+    url: https://www.financialexpress.com/feed/
+    verification: curated_directory
+    evidence: "Listed in plenaryapp/awesome-rss-feeds (India)."
+    poll_seconds: 180
+  - id: hindu_businessline
+    name: The Hindu BusinessLine
+    kind: rss
+    quality: REPUTABLE_SECONDARY
+    category: financial_media
+    url: https://www.thehindubusinessline.com/feeder/default.rss
+    verification: curated_directory
+    evidence: "Listed in plenaryapp/awesome-rss-feeds (India)."
+    poll_seconds: 300
+
+  # ------------------------------------------------------------------ Discovery only
+  - id: google_news_india_markets
+    name: Google News (India markets discovery)
+    kind: google_news
+    quality: DISCOVERY_ONLY
+    category: discovery
+    url: https://news.google.com/rss/search
+    verification: documented_indexed
+    evidence: "Public Google News RSS search endpoint (no official API docs; personal-use RSS). Headlines/links only."
+    poll_seconds: 300
+    off_hours_poll_seconds: 1800
+    max_items: 60
+    params: {when: 1d, edition: {hl: en-IN, gl: IN, ceid: "IN:en"}}
+    queries:
+      - "NSE stock order win crore"
+      - "shares surge OR plunge NSE"
+      - "SEBI order company"
+      - "RBI policy repo rate"
+      - "anti-dumping duty India"
+      - "export ban India commodity"
+      - "GST Council decision"
+      - "USFDA warning letter OR import alert Indian pharma"
+      - "block deal stake sale NSE"
+      - "CCI approves acquisition"
+  - id: google_news_global_macro
+    name: Google News (global macro discovery)
+    kind: google_news
+    quality: DISCOVERY_ONLY
+    category: discovery
+    url: https://news.google.com/rss/search
+    verification: documented_indexed
+    evidence: "Public Google News RSS search endpoint. Headlines/links only."
+    poll_seconds: 600
+    off_hours_poll_seconds: 1800
+    max_items: 40
+    params: {when: 1d, edition: {hl: en-IN, gl: IN, ceid: "IN:en"}}
+    queries:
+      - "Federal Reserve rate decision"
+      - "crude oil prices OPEC"
+      - "US tariffs India"
+      - "China stimulus metals"
+  - id: gdelt_india_business
+    name: GDELT DOC 2.0 (India business discovery)
+    kind: gdelt
+    quality: DISCOVERY_ONLY
+    category: discovery
+    url: https://api.gdeltproject.org/api/v2/doc/doc
+    verification: documented_indexed
+    evidence: "GDELT DOC 2.0 API (blog.gdeltproject.org/gdelt-doc-2-0-api-debuts). Updates ~every 15 minutes; not real-time."
+    poll_seconds: 900
+    off_hours_poll_seconds: 3600
+    params: {timespan: 60min, maxrecords: 75}
+    queries:
+      - "sourcecountry:IN sourcelang:english (stock OR shares OR NSE OR Sensex)"
+      - "sourcecountry:IN sourcelang:english (order OR contract OR acquisition) crore"

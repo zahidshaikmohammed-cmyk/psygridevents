@@ -1,5 +1,12 @@
 # Universe Integration — psygridevents consumes Psygrid's canonical universe
 
+> **Update (October 2026):** Psygrid now declares `"universe": "PSYGRID_989"` (HEG was removed;
+> `config.UNIVERSE_SIZE = 989`, commit `29d9b8d`). psygridevents no longer hard-codes 990: the
+> expected count is derived from the universe id the canonical file declares
+> (`universe_integrity.expected_size_for_universe_id`), with a floor of 900 that still rejects a
+> reverted 450-symbol file. `config/instruments.json` and the test reference fixture were resynced
+> to 989 symbols. References to "990" below describe the original contract.
+
 ## Ownership
 
 `zahidshaikmohammed-cmyk/Psygrid` is the single canonical owner of the live

@@ -4,9 +4,9 @@
   "canonical_source": {
     "repo": "zahidshaikmohammed-cmyk/Psygrid",
     "path": "stocks.json",
-    "universe_id": "PSYGRID_990",
-    "commit": "484e482fc71a2a9e0f122f06d783925acb7c98d7",
-    "synced_at": "2026-09-19T07:39:22.165375+00:00"
+    "universe_id": "PSYGRID_989",
+    "commit": "29d9b8dec1215446e0a91e1cb83f7777152efc60",
+    "synced_at": "2026-10-04T09:10:38.969439+00:00"
   },
   "instruments": [
     "RELIANCE",
@@ -333,7 +333,6 @@
     "GNFC",
     "GPPL",
     "GSFC",
-    "HEG",
     "HAPPSTMNDS",
     "HATHWAY",
     "HATSUN",

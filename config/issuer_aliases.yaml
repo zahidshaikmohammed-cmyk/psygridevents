@@ -1,5 +1,156 @@
-version: "1.0.0"
+version: "2.0.0"
 
-# Populated only from verified exchange/company-name and symbol-change records.
-# Empty by design until the official source files are ingested.
-issuers: {}
+# Entity-resolution reference data used by entity_resolution.EntityResolver.
+#
+# Precedence at runtime (highest first):
+#   1. NSE filing-link symbol (".../corporate/<SYMBOL>_<timestamp>_...pdf")  -- first party
+#   2. Official issuer names fetched from NSE (EQUITY_L.csv, NIFTY index lists)
+#      into the `issuers` table by the pre-market issuer-master refresh
+#   3. The curated names/aliases below (bootstrap until 2 is available)
+#   4. Unambiguous uppercase NSE symbol tokens ("TCS", "RELIANCE")
+#
+# Every symbol below is validated against config/instruments.json at load;
+# an entry for a symbol outside the universe is dropped (logged), never used.
+# Names are matched as proper nouns: every word of the matched span must be
+# capitalised in the source text, so "crude oil India imports" never matches
+# "Oil India".
+
+# Phrases that contain an issuer name but refer to something else. A match
+# lying inside one of these phrases is discarded.
+blocked_phrases:
+  - "Reserve Bank of India"
+  - "Securities and Exchange Board of India"
+  - "Insurance Regulatory and Development Authority of India"
+  - "Competition Commission of India"
+  - "Bombay Stock Exchange"
+  - "BSE Sensex"
+  - "National Stock Exchange"
+  - "NSE Nifty"
+  - "Government of India"
+  - "Union Bank of India"
+  - "Life Insurance Corporation Act"
+
+# Symbols that are ordinary words, exchange names or <=3-letter acronyms.
+# A bare token never resolves to these; they need an exchange qualifier
+# ("NSE: OIL", "NSE:IDEA") or a company-name/alias match.
+ambiguous_symbols: [OIL, STAR, RAIN, ACE, BETA, APEX, FACT, IDEA, TI, NH, LT, BSE, MCX, INA, TAC, YOGI, CERA,
+  SIKA, ATUL, SULA, JASH, RUPA, GAJA, NAVA, ARIS, TEGA, SHK, BEL, HAL, ITI, IOB, IRB, PTC, PPL, EPL, TIL, WEL,
+  CCL, CUB, SIS, BLS, BBL, SBC, KCP, NFL, CAMS, DOMS, ERIS, BASF, ABB, SAIL, DLF, GAIL, IEX, IGL, MGL, ITC, IOC,
+  PNB, TCS, CDSL, SRF, UPL, VBL, AWL, FDC, KEC, KEI, MRF, NCC, BCG, FSL, HGS, ICIL, ACC, BDL, KSB, HMT, MMTC,
+  LMW, NRL, AMAL, EPIGRAL, ANUP, BBTC, PCBL, TNPL, IFCI, IDBI, RBA, HCC, HCG, KIMS, OAL, BEPL, SEIL, SPAL, TARC,
+  LTF, LTM, LTTS, PFC, IRFC, NHPC, CESC, GNFC, GSFC, GPPL, CGCL, GAEL, DYCL, KICL, PCCL, VHL, ACGL, RIIL, JARO,
+  AFSL, SEPC, RSWM, SVLL, LGHL, SGIL, RNFI, KECL, MEIL, TREL, BLAL, ABDL, AIIL, GHCL, GPIL, HSCL, IMFA, HEXT,
+  IKS, IGIL, PGEL, PGIL, PGHL, JWL, JLHL, SBFC, E2E, MSPL, NIBE, VOGL, DCAL, BEML, GRSE, KRBL, MOIL, BBL, JSL,
+  CCL, ZEEL, SJVN, NAVA, NBCC, ITI, ATGL, KPIL, MFSL, VEDL, NMDC, NTPC, ONGC, BPCL, BHEL, SBIN, INFY, LICI]
+
+issuers:
+  RELIANCE: {names: ["Reliance Industries"], aliases: [{alias: "RIL", kind: abbreviation, confidence: 0.85}, {alias: "Jio Platforms", kind: subsidiary, confidence: 0.75}, {alias: "Reliance Retail", kind: subsidiary, confidence: 0.75}, {alias: "Mukesh Ambani", kind: promoter, confidence: 0.6}]}
+  HDFCBANK: {names: ["HDFC Bank"]}
+  ICICIBANK: {names: ["ICICI Bank"]}
+  SBIN: {names: ["State Bank of India"], aliases: [{alias: "SBI", kind: abbreviation, confidence: 0.85}]}
+  INFY: {names: ["Infosys"]}
+  TCS: {names: ["Tata Consultancy Services"]}
+  BHARTIARTL: {names: ["Bharti Airtel"], aliases: [{alias: "Airtel", kind: brand, confidence: 0.85}]}
+  ITC: {names: ["ITC Limited", "ITC Ltd"]}
+  LT: {names: ["Larsen & Toubro", "Larsen and Toubro"], aliases: [{alias: "L&T", kind: abbreviation, confidence: 0.88}]}
+  HINDUNILVR: {names: ["Hindustan Unilever"], aliases: [{alias: "HUL", kind: abbreviation, confidence: 0.85}]}
+  KOTAKBANK: {names: ["Kotak Mahindra Bank"]}
+  AXISBANK: {names: ["Axis Bank"]}
+  BAJFINANCE: {names: ["Bajaj Finance"]}
+  BAJAJFINSV: {names: ["Bajaj Finserv"]}
+  MARUTI: {names: ["Maruti Suzuki"]}
+  M&M: {names: ["Mahindra & Mahindra", "Mahindra and Mahindra"]}
+  TATASTEEL: {names: ["Tata Steel"]}
+  JSWSTEEL: {names: ["JSW Steel"]}
+  HINDALCO: {names: ["Hindalco Industries", "Hindalco"]}
+  VEDL: {names: ["Vedanta Limited", "Vedanta Ltd"]}
+  COALINDIA: {names: ["Coal India"]}
+  ONGC: {names: ["Oil and Natural Gas Corporation", "Oil & Natural Gas Corporation"]}
+  NTPC: {names: ["NTPC Limited", "NTPC Ltd"]}
+  POWERGRID: {names: ["Power Grid Corporation of India", "Power Grid Corp"]}
+  IOC: {names: ["Indian Oil Corporation"], aliases: [{alias: "IndianOil", kind: brand, confidence: 0.85}]}
+  BPCL: {names: ["Bharat Petroleum"]}
+  HINDPETRO: {names: ["Hindustan Petroleum"], aliases: [{alias: "HPCL", kind: abbreviation, confidence: 0.85}]}
+  GAIL: {names: ["GAIL (India)", "GAIL India"]}
+  ADANIENT: {names: ["Adani Enterprises"]}
+  ADANIPORTS: {names: ["Adani Ports"]}
+  ADANIGREEN: {names: ["Adani Green Energy"]}
+  ADANIPOWER: {names: ["Adani Power"]}
+  ULTRACEMCO: {names: ["UltraTech Cement"]}
+  GRASIM: {names: ["Grasim Industries"]}
+  SHREECEM: {names: ["Shree Cement"]}
+  AMBUJACEM: {names: ["Ambuja Cements"]}
+  ACC: {names: ["ACC Limited", "ACC Ltd"]}
+  ASIANPAINT: {names: ["Asian Paints"]}
+  BERGEPAINT: {names: ["Berger Paints"]}
+  TITAN: {names: ["Titan Company"]}
+  NESTLEIND: {names: ["Nestle India"]}
+  BRITANNIA: {names: ["Britannia Industries"]}
+  DABUR: {names: ["Dabur India"]}
+  SUNPHARMA: {names: ["Sun Pharmaceutical", "Sun Pharma"]}
+  DRREDDY: {names: ["Dr Reddy's Laboratories", "Dr. Reddy's Laboratories", "Dr Reddy's"]}
+  CIPLA: {names: ["Cipla"]}
+  LUPIN: {names: ["Lupin"]}
+  DIVISLAB: {names: ["Divi's Laboratories", "Divis Laboratories"]}
+  AUROPHARMA: {names: ["Aurobindo Pharma"]}
+  ZYDUSLIFE: {names: ["Zydus Lifesciences"]}
+  WIPRO: {names: ["Wipro"]}
+  HCLTECH: {names: ["HCL Technologies", "HCLTech"]}
+  TECHM: {names: ["Tech Mahindra"]}
+  HAL: {names: ["Hindustan Aeronautics"]}
+  BEL: {names: ["Bharat Electronics"]}
+  BHEL: {names: ["Bharat Heavy Electricals"]}
+  BDL: {names: ["Bharat Dynamics"]}
+  MAZDOCK: {names: ["Mazagon Dock Shipbuilders", "Mazagon Dock"]}
+  IRCTC: {names: ["Indian Railway Catering and Tourism Corporation", "Indian Railway Catering & Tourism Corporation"]}
+  IRFC: {names: ["Indian Railway Finance Corporation"]}
+  RVNL: {names: ["Rail Vikas Nigam"]}
+  INDIGO: {names: ["InterGlobe Aviation"], aliases: [{alias: "IndiGo", kind: brand, confidence: 0.8}]}
+  EICHERMOT: {names: ["Eicher Motors"], aliases: [{alias: "Royal Enfield", kind: brand, confidence: 0.75}]}
+  HEROMOTOCO: {names: ["Hero MotoCorp"]}
+  BAJAJ-AUTO: {names: ["Bajaj Auto"]}
+  TVSMOTOR: {names: ["TVS Motor"]}
+  ASHOKLEY: {names: ["Ashok Leyland"]}
+  BANKBARODA: {names: ["Bank of Baroda"]}
+  PNB: {names: ["Punjab National Bank"]}
+  CANBK: {names: ["Canara Bank"]}
+  BANKINDIA: {names: ["Bank of India"]}
+  INDUSINDBK: {names: ["IndusInd Bank"]}
+  IDFCFIRSTB: {names: ["IDFC First Bank", "IDFC FIRST Bank"]}
+  FEDERALBNK: {names: ["Federal Bank"]}
+  HDFCLIFE: {names: ["HDFC Life Insurance", "HDFC Life"]}
+  ICICIPRULI: {names: ["ICICI Prudential Life"]}
+  LICI: {names: ["Life Insurance Corporation of India"]}
+  ETERNAL: {names: ["Eternal Limited", "Eternal Ltd"], aliases: [{alias: "Zomato", kind: brand, confidence: 0.8}, {alias: "Blinkit", kind: brand, confidence: 0.75}]}
+  PAYTM: {names: ["One 97 Communications"], aliases: [{alias: "Paytm", kind: brand, confidence: 0.85}]}
+  NYKAA: {names: ["FSN E-Commerce Ventures"], aliases: [{alias: "Nykaa", kind: brand, confidence: 0.85}]}
+  DMART: {names: ["Avenue Supermarts"], aliases: [{alias: "DMart", kind: brand, confidence: 0.85}]}
+  TRENT: {names: ["Trent Limited", "Trent Ltd"]}
+  JIOFIN: {names: ["Jio Financial Services"]}
+  SAIL: {names: ["Steel Authority of India"]}
+  NMDC: {names: ["NMDC Limited", "NMDC Ltd"]}
+  OIL: {names: ["Oil India"]}
+  PIDILITIND: {names: ["Pidilite Industries"]}
+  DLF: {names: ["DLF Limited", "DLF Ltd"]}
+  GODREJPROP: {names: ["Godrej Properties"]}
+  TATAPOWER: {names: ["Tata Power"]}
+  TATACONSUM: {names: ["Tata Consumer Products"]}
+  TATACOMM: {names: ["Tata Communications"]}
+  IDEA: {names: ["Vodafone Idea"]}
+  APOLLOHOSP: {names: ["Apollo Hospitals"]}
+  MAXHEALTH: {names: ["Max Healthcare"]}
+  POLYCAB: {names: ["Polycab India"]}
+  HAVELLS: {names: ["Havells India"]}
+  SIEMENS: {names: ["Siemens Limited", "Siemens Ltd"]}
+  ABB: {names: ["ABB India"]}
+  CGPOWER: {names: ["CG Power and Industrial Solutions", "CG Power"]}
+  DIXON: {names: ["Dixon Technologies"]}
+  PERSISTENT: {names: ["Persistent Systems"]}
+  COFORGE: {names: ["Coforge"]}
+  MPHASIS: {names: ["Mphasis"]}
+  SUZLON: {names: ["Suzlon Energy"]}
+  IREDA: {names: ["Indian Renewable Energy Development Agency"]}
+  NHPC: {names: ["NHPC Limited", "NHPC Ltd"]}
+  SJVN: {names: ["SJVN Limited", "SJVN Ltd"]}
+  PFC: {names: ["Power Finance Corporation"]}
+  RECLTD: {names: ["REC Limited", "REC Ltd"]}

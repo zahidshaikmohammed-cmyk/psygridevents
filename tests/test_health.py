@@ -7,6 +7,7 @@ from psygridevents.market_data import NullMarketDataAdapter, PsygridMarketDataAd
 from psygridevents.psygrid_client import PsygridClient
 from psygridevents.state_store import PublicationStateStore
 from psygridevents.story_engine import ProviderAcquisitionStatus
+from psygridevents.universe_integrity import EXPECTED_UNIVERSE_SIZE
 
 T0 = datetime(2026, 9, 19, 9, 30, tzinfo=timezone.utc)
 
@@ -21,7 +22,7 @@ def test_light_health_check_reports_universe_and_no_providers() -> None:
     report = build_health_report(market_data=NullMarketDataAdapter(), market_data_source="none")
     assert report.application_status == "OK"
     assert report.universe_status == "OK"
-    assert report.universe_count == 990
+    assert report.universe_count == EXPECTED_UNIVERSE_SIZE
     assert report.providers == ()
     assert report.market_connectivity == "N/A"
 
@@ -113,4 +114,4 @@ def test_health_report_to_dict_is_json_serializable() -> None:
     report = build_health_report(market_data=NullMarketDataAdapter(), market_data_source="none")
     payload = health_report_to_dict(report)
     json.dumps(payload)  # must not raise
-    assert payload["universe"]["count"] == 990
+    assert payload["universe"]["count"] == EXPECTED_UNIVERSE_SIZE

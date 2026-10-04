@@ -19,6 +19,11 @@ class RawObservation:
     published_at: datetime | None
     observed_at: datetime
     raw: dict[str, Any]
+    # Source-quality class (PRIMARY / OFFICIAL / REPUTABLE_SECONDARY /
+    # DISCOVERY_ONLY) and source category, set by the production provider
+    # layer. Optional so every existing constructor keeps working.
+    source_quality: str | None = None
+    category: str | None = None
 
 
 class RSSAcquirer:

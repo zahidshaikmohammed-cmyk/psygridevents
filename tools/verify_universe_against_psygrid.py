@@ -27,12 +27,11 @@ from psygridevents.universe import load_instruments  # noqa: E402
 from psygridevents.universe_integrity import (  # noqa: E402
     CanonicalUniverseUnavailableError,
     check_universe_integrity,
+    expected_size_for_universe_id,
 )
 
-CANONICAL_UNIVERSE_ID = "PSYGRID_990"
 
-
-def _load_reference(*, psygrid_path: Path | None, psygrid_url: str | None) -> list[str]:
+def _load_reference(*, psygrid_path: Path | None, psygrid_url: str | None) -> tuple[int, list[str]]:
     if psygrid_path is not None:
         source_file = psygrid_path / "stocks.json"
         if not source_file.exists():
@@ -47,12 +46,11 @@ def _load_reference(*, psygrid_path: Path | None, psygrid_url: str | None) -> li
     else:
         raise CanonicalUniverseUnavailableError("neither --psygrid-path nor --psygrid-url was supplied")
 
-    if payload.get("universe") != CANONICAL_UNIVERSE_ID:
-        raise CanonicalUniverseUnavailableError(f"unexpected universe id {payload.get('universe')!r}")
+    expected = expected_size_for_universe_id(payload.get("universe"))
     symbols = payload.get("symbols")
     if not isinstance(symbols, list) or not symbols:
         raise CanonicalUniverseUnavailableError("Psygrid source has no non-empty symbols array")
-    return [str(symbol).strip().upper() for symbol in symbols]
+    return expected, [str(symbol).strip().upper() for symbol in symbols]
 
 
 def main() -> int:
@@ -70,13 +68,13 @@ def main() -> int:
     print(f"LOCAL (vendored) universe: {len(local)} instruments")
 
     try:
-        reference = _load_reference(psygrid_path=args.psygrid_path, psygrid_url=args.psygrid_url)
+        expected, reference = _load_reference(psygrid_path=args.psygrid_path, psygrid_url=args.psygrid_url)
     except CanonicalUniverseUnavailableError as exc:
         print(f"CANONICAL REFERENCE: {exc}")
         return 1
     print(f"CANONICAL (Psygrid) universe: {len(reference)} instruments")
 
-    report = check_universe_integrity(local, reference_symbols=reference)
+    report = check_universe_integrity(local, reference_symbols=reference, expected_count=expected)
     print(f"COUNT MATCH: {report.count_matches_expected} ({report.count}/{report.expected_count})")
     print(f"DUPLICATES: {len(report.duplicates)}")
     print(f"MALFORMED: {len(report.malformed)}")

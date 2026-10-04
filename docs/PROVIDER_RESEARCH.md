@@ -1,5 +1,30 @@
 # PSYGRIDEVENTS — News Provider Research
 
+## Production decision (October 2026): free/public stack
+
+The production service is built **without** any premium news vendor: no LSEG/Reuters,
+Bloomberg, FactSet or RavenPack, and no paid NSE or BSE data feed. The mandatory additional data
+cost is ₹0.
+
+The stack (see [SOURCES.md](SOURCES.md)) is:
+
+* **Exchange first-party:** NSE public RSS feeds (announcements, results, board meetings, corporate actions, insider trading, circulars), NSE archives bulk/block-deal CSVs, and BSE public RSS (notices; corporate announcements resolved from BSE's own RSS page).
+* **Regulators and government:** SEBI, RBI (press releases, notifications, speeches), PIB (all ministries, including Finance, Commerce, MoSPI, Petroleum, Power and Telecom), and the DGFT, MoSPI and CCI listing pages.
+* **Media:** Indian financial media RSS (Moneycontrol, Economic Times, Business Standard, Mint, Financial Express, BusinessLine).
+* **Discovery only:** Google News RSS and the GDELT DOC 2.0 API.
+
+Sources without a documented machine-readable endpoint are listed as `unavailable` and are never
+scraped behind forms or CAPTCHAs: DGTR, CBIC/GST Council, e-Gazette, PPAC, TRAI, CERC, IMD, NCLT,
+the Supreme Court, NSE ASM/GSM and the NSE F&O ban list.
+
+Honest trade-off: free RSS is slower and less complete than a machine-readable wire, and NSE/BSE
+may block cloud IP addresses. The engine therefore probes and health-checks every source and
+degrades gracefully. If the optional ₹10,000/month budget is ever used, the analysis below still
+applies. A premium wire would improve latency and breadth but is not required for the engine to
+work.
+
+---
+
 ## Research objective
 
 The engine is not a headline reader. It must discover, verify, deduplicate, cluster, contextualize and rank events that can materially affect the configured 990-instrument NSE universe.
